@@ -4,11 +4,18 @@
     unused_variables,
     clippy::unneeded_struct_pattern,
     clippy::unnecessary_wraps,
-    clippy::unused_self
+    clippy::unused_self,
+    clippy::doc_markdown,
+    clippy::trivially_copy_pass_by_ref,
+    clippy::default_constructed_unit_structs,
+    clippy::too_many_lines,
+    clippy::type_complexity,
+    clippy::map_unwrap_or
 )]
 mod init;
 mod input;
 mod render;
+mod rpc;
 
 use std::collections::BTreeSet;
 use std::env;
@@ -88,20 +95,35 @@ const CLI_OPTION_SUGGESTIONS: &[&str] = &[
 
 type AllowedToolSet = BTreeSet<String>;
 
-fn main() {
-    if let Err(error) = run() {
-        let message = error.to_string();
-        if message.contains("`claw --help`") {
-            eprintln!("error: {message}");
-        } else {
-            eprintln!(
-                "error: {message}
+#[tokio::main]
+async fn main() {
+    let level = env::var("JASUSI_LOG_LEVEL").unwrap_or_else(|_| "info".into());
+    let filter = tracing_subscriber::EnvFilter::new(level);
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .json()
+        .init();
 
-Run `claw --help` for usage."
-            );
-        }
+    let jasusi_dir = dirs_path();
+    if let Err(e) = fs::create_dir_all(&jasusi_dir) {
+        tracing::error!(path = %jasusi_dir.display(), error = %e, "failed to create ~/.jasusi");
+    }
+    let pid_path = jasusi_dir.join("daemon.pid");
+    if let Err(e) = fs::write(&pid_path, std::process::id().to_string()) {
+        tracing::error!(path = %pid_path.display(), error = %e, "failed to write daemon.pid");
+    }
+
+    if let Err(e) = rpc::server::start_server().await {
+        tracing::error!(error = %e, "gRPC server exited with error");
         std::process::exit(1);
     }
+}
+
+fn dirs_path() -> PathBuf {
+    let home = env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join(".jasusi")
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,0 +1,74 @@
+syntax = "proto3";
+package jasusi.v3;
+
+service JasusCoreService {
+  rpc ExecuteTool      (ToolRequest)     returns (stream ToolEvent);
+  rpc UpsertMemory     (MemoryEntry)     returns (UpsertResult);
+  rpc QueryMemory      (MemoryQuery)     returns (MemoryResponse);
+  rpc RollbackMemory   (RollbackRequest) returns (RollbackResult);
+  rpc VerifyLedger     (Empty)           returns (LedgerStatus);
+  rpc GetLedgerEntries (LedgerQuery)     returns (stream LedgerEntry);
+  rpc GetSessionState  (SessionKey)      returns (SessionState);
+  rpc UpdateSession    (SessionUpdate)   returns (Empty);
+}
+
+message ToolRequest {
+  string tool_name        = 1;
+  bytes  input_json       = 2;
+  string session_id       = 3;
+  string project          = 4;
+  PermissionMode permission        = 5;
+  SandboxProfile sandbox_profile   = 6;
+}
+message ToolEvent {
+  oneof event {
+    ToolOutput        output   = 1;
+    SecurityException security = 2;
+    PermissionPrompt  prompt   = 3;
+    ToolError         error    = 4;
+    ProgressUpdate    progress = 5;
+  }
+}
+message ToolOutput        { string content = 1; bool is_error = 2; }
+message ToolError         { string message = 1; string tool_name = 2; }
+message ProgressUpdate    { string message = 1; uint32 percent_complete = 2; }
+message SecurityException {
+  string file_path         = 1;
+  string threat_class      = 2;
+  string detected_fragment = 3;
+  string quarantine_path   = 4;
+}
+message PermissionPrompt  { string tool_name = 1; string description = 2; string preview = 3; }
+message MemoryEntry {
+  string collection      = 1;
+  bytes  vector          = 2;
+  string content         = 3;
+  string session_id      = 4;
+  string origin          = 5;
+  uint32 trust_level     = 6;
+  string provenance_hash = 7;
+  uint64 audit_seq       = 8;
+}
+message MemoryQuery    { string collection = 1; bytes query_vector = 2; uint32 limit = 3; uint32 min_trust = 4; }
+message MemoryResponse { repeated MemoryResult results = 1; }
+message MemoryResult   { string content = 1; float score = 2; uint32 trust_level = 3; }
+message RollbackRequest { string project = 1; string cutoff_timestamp = 2; }
+message RollbackResult  { uint32 removed_count = 1; uint64 ledger_seq = 2; }
+message LedgerStatus    { bool verified = 1; optional uint64 tampered_at_seq = 2; }
+message LedgerQuery     { string session_id = 1; uint32 limit = 2; }
+message LedgerEntry     {
+  uint64 seq = 1; string timestamp = 2; string event_type = 3;
+  string actor = 4; string outcome = 5; string detail = 6;
+}
+message SessionKey    { string session_id = 1; string project = 2; }
+message SessionState  {
+  string session_id = 1; uint64 input_tokens = 2; uint64 output_tokens = 3;
+  uint32 compaction_count = 4; string updated_at = 5;
+}
+message SessionUpdate { string session_id = 1; string project = 2;
+                        uint64 input_tokens = 3; uint64 output_tokens = 4; }
+message Empty        {}
+message UpsertResult { bool success = 1; }
+
+enum PermissionMode  { ALLOW = 0; DENY = 1; PROMPT = 2; }
+enum SandboxProfile  { STRICT = 0; FILE = 1; SEARCH = 2; WEB = 3; NONE = 4; }

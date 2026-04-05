@@ -23,11 +23,14 @@
 - plugins    → PRESERVE unchanged
 - telemetry  → PRESERVE unchanged
 
-## CARGO VERSIONS (do not deviate)
-tokio="1.38"(full) kameo="0.15"(derive,remote) tonic="0.12"(transport)
-prost="0.13" buffa="0.2" aya="0.13"(async_tokio) seccompiler="0.4"
-landlock="0.4" qdrant-client="1.11"(async) rusqlite="0.31"(bundled)
-sha2="0.10" jsonschema-rs="0.18" serde="1"(derive) unicode-normalization="0.1"
+## CONFIRMED CRATE CORRECTIONS (from Phase 1 resolution)
+- jsonschema-rs        → jsonschema = "0.18" (published name on crates.io)
+- kameo features       → ["macros", "remote"] NOT ["derive", "remote"]
+- qdrant-client        → default features (no "async" feature in v1.11+)
+- aya/seccompiler/landlock → [target.'cfg(target_os="linux")'.dependencies] only
+- tonic-build          → .compile_protos() NOT .compile()
+- proto path           → ../../../proto/ (3 levels from jasusi-core/)
+- UDS sockets          → TCP fallback on Windows (0.0.0.0:50051); UDS on Linux only
 
 ## POWERSHELL COMMAND TRANSLATIONS (Windows environment)
 tail -N        → Select-Object -Last N
