@@ -20,6 +20,8 @@
 - commands                → EXTEND (add /ledger /rollback)
 - compat-harness          → PRESERVE unchanged
 - mock-anthropic-service  → PRESERVE (useful for tests)
+- plugins    → PRESERVE unchanged
+- telemetry  → PRESERVE unchanged
 
 ## CARGO VERSIONS (do not deviate)
 tokio="1.38"(full) kameo="0.15"(derive,remote) tonic="0.12"(transport)
