@@ -55,6 +55,7 @@ class CommandResult:
     output: str
     should_exit: bool = False
     clear_history: bool = False
+    compact_requested: bool = False
 
 
 class CommandHandler:
@@ -203,7 +204,8 @@ class CommandHandler:
     def _cmd_compact(self, _args: str) -> CommandResult:
         return CommandResult(
             handled=True,
-            output=f"[compaction requested at turn {self._turn_count}]",
+            output="[compact triggered]",
+            compact_requested=True,
         )
 
     def _cmd_resume(self, args: str) -> CommandResult:

@@ -106,7 +106,7 @@ async def _run_task(repl: object, task_text: str) -> int:
     from jasusi_cli.cli.repl import Repl
 
     assert isinstance(repl, Repl)
-    await repl._run_turn(task_text)
+    await repl._process_turn(task_text)
     repl._formatter.flush_json()
     return 0
 
