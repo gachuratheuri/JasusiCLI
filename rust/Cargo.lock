@@ -2005,6 +2005,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "syntect",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",

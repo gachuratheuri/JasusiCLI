@@ -13,8 +13,10 @@
     clippy::map_unwrap_or
 )]
 mod actors;
+mod audit;
 mod init;
 mod input;
+mod memory;
 mod render;
 mod rpc;
 mod sandbox;
