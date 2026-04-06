@@ -94,6 +94,58 @@ impl kameo::message::Message<ExecuteToolMsg> for SessionActor {
         if let Err(e) = stack.apply() {
             tracing::error!("Sandbox apply failed: {}", e);
         }
+
+        // Firewall inspection — RULE 9: hash only, never log raw input_json
+        let firewall = crate::security::firewall::SemanticFirewall::new();
+        let audit_hash =
+            crate::security::firewall::SemanticFirewall::audit_hash(&msg.input_json);
+        match firewall.inspect(&msg.tool_name, &msg.input_json) {
+            crate::security::firewall::FirewallVerdict::Allow => {
+                tracing::info!(tool = %msg.tool_name, input_hash = %audit_hash, "Firewall: ALLOW");
+            }
+            crate::security::firewall::FirewallVerdict::Deny { reason } => {
+                tracing::warn!(tool = %msg.tool_name, reason = %reason, "Firewall: DENY");
+                let (tx, rx) = tokio::sync::mpsc::channel(1);
+                let _ = tx.try_send(crate::rpc::proto::ToolEvent {
+                    event: Some(crate::rpc::proto::tool_event::Event::Error(
+                        crate::rpc::proto::ToolError {
+                            message: reason,
+                            tool_name: msg.tool_name.clone(),
+                        },
+                    )),
+                });
+                return ExecuteToolReply { rx };
+            }
+            crate::security::firewall::FirewallVerdict::Quarantine {
+                threat_class,
+                fragment,
+            } => {
+                tracing::error!(
+                    tool = %msg.tool_name,
+                    threat_class = %threat_class,
+                    input_hash = %audit_hash,
+                    "Firewall: QUARANTINE — fragment redacted from logs"
+                );
+                let _ = fragment;
+                let (tx, rx) = tokio::sync::mpsc::channel(1);
+                let _ = tx.try_send(crate::rpc::proto::ToolEvent {
+                    event: Some(crate::rpc::proto::tool_event::Event::Security(
+                        crate::rpc::proto::SecurityException {
+                            file_path: String::new(),
+                            threat_class,
+                            detected_fragment: "[REDACTED]".to_string(),
+                            quarantine_path: format!(
+                                "{}/.jasusi/quarantine/{}.json",
+                                dirs::home_dir().unwrap_or_default().display(),
+                                audit_hash
+                            ),
+                        },
+                    )),
+                });
+                return ExecuteToolReply { rx };
+            }
+        }
+
         let (tx, rx) = mpsc::channel(32);
         let tool_name = msg.tool_name.clone();
 

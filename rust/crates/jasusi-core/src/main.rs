@@ -18,6 +18,7 @@ mod input;
 mod render;
 mod rpc;
 mod sandbox;
+mod security;
 
 use std::collections::BTreeSet;
 use std::env;
