@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
+
+if TYPE_CHECKING:
+    from jasusi_cli.api.provider_client import ProviderClient as ProviderClient
 
 logger = logging.getLogger(__name__)
 
