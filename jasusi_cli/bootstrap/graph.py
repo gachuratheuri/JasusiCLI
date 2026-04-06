@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import uuid
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from jasusi_cli.security.prompt_builder import SystemPromptBuilder
 
 logger = logging.getLogger(__name__)
 
+VALID_EXECUTION_MODES: frozenset[str] = frozenset({"chat", "task", "status", "version"})
+
 
 class BootstrapPhase(Enum):
     PREFETCH = auto()
@@ -26,12 +29,30 @@ class BootstrapPhase(Enum):
     DEFERRED_INIT = auto()
     MODE_ROUTING = auto()
     QUERY_ENGINE = auto()
+    FAST_PATH_VERSION = auto()
+    FAST_PATH_STATUS = auto()
+    QUERY_ENGINE_SUBMIT = auto()
 
 
 class ExecutionMode(Enum):
     LOCAL = "local"
     REMOTE = "remote"
     SIMPLE = "simple"
+
+
+@dataclass
+class BootstrapContext:
+    """Immutable snapshot returned from every bootstrap path."""
+
+    phase: BootstrapPhase = BootstrapPhase.PREFETCH
+    execution_mode: str = "chat"
+    settings: JasusiSettings | None = None
+    session_store: SessionStore | None = field(default=None)
+    router: ScoredRouter | None = None
+    session_id: str | None = None
+    task_input: str | None = None
+    simple_mode: bool = False
+    warnings_attached: bool = False
 
 
 @dataclass
@@ -51,11 +72,84 @@ class BootstrapGraph:
     Phases 4a/4b (setup + commands) run in parallel via asyncio.gather.
     """
 
-    def __init__(self, project_root: Path | None = None) -> None:
-        self._project_root = project_root or Path.cwd()
+    VERSION: str = "0.1.0"
+
+    def __init__(
+        self,
+        project_root: Path | None = None,
+        *,
+        cwd: Path | None = None,
+    ) -> None:
+        self._project_root = cwd or project_root or Path.cwd()
         self._settings: JasusiSettings | None = None
         self._mode: ExecutionMode = ExecutionMode.LOCAL
         self._session_store: SessionStore | None = None
+
+    # ------------------------------------------------------------------
+    # Fast paths — no settings, no async, minimal work
+    # ------------------------------------------------------------------
+
+    def run_version_fast_path(self) -> BootstrapContext:
+        """Return immediately with version info — no settings loaded."""
+        return BootstrapContext(
+            phase=BootstrapPhase.FAST_PATH_VERSION,
+            execution_mode="version",
+        )
+
+    def run_status_fast_path(self) -> BootstrapContext:
+        """Load only the session store — skip settings and router."""
+        store = SessionStore(base_dir=self._project_root / ".jasusi" / "sessions")
+        return BootstrapContext(
+            phase=BootstrapPhase.FAST_PATH_STATUS,
+            execution_mode="status",
+            session_store=store,
+        )
+
+    # ------------------------------------------------------------------
+    # Full bootstrap path — async
+    # ------------------------------------------------------------------
+
+    async def run_full(
+        self,
+        execution_mode: str = "chat",
+        task_input: str | None = None,
+        simple_mode: bool = False,
+        session_id: str | None = None,
+    ) -> BootstrapContext:
+        """Run the full 7-phase bootstrap and return a populated context."""
+        if execution_mode not in VALID_EXECUTION_MODES:
+            logger.warning(
+                "Unknown execution_mode=%r, defaulting to 'chat'", execution_mode,
+            )
+            execution_mode = "chat"
+
+        # Phase 2: Warning handler
+        warnings.filterwarnings(
+            "ignore", category=DeprecationWarning, module="pkg_resources",
+        )
+
+        # Phase 4: Parallel setup
+        settings = SettingsLoader.load(self._project_root)
+        store = SessionStore(base_dir=self._project_root / ".jasusi" / "sessions")
+        router = ScoredRouter()
+
+        sid = session_id or str(uuid.uuid4())[:12]
+
+        return BootstrapContext(
+            phase=BootstrapPhase.QUERY_ENGINE_SUBMIT,
+            execution_mode=execution_mode,
+            settings=settings,
+            session_store=store,
+            router=router,
+            session_id=sid,
+            task_input=task_input,
+            simple_mode=simple_mode,
+            warnings_attached=True,
+        )
+
+    # ------------------------------------------------------------------
+    # Legacy entry point (phases 6-8 compat)
+    # ------------------------------------------------------------------
 
     def run(self, argv: list[str] | None = None) -> BootstrapResult:
         return asyncio.run(self._run_async(argv or sys.argv[1:]))

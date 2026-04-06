@@ -26,6 +26,7 @@ class RuntimeConfig:
     max_turns: int = 8
     max_budget_tokens: int = 2_000
     compact_after_turns: int = 12
+    task_input: str = ""
 
 
 class RuntimeFactory:
