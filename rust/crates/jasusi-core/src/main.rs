@@ -12,6 +12,7 @@
     clippy::type_complexity,
     clippy::map_unwrap_or
 )]
+mod actors;
 mod init;
 mod input;
 mod render;

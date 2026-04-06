@@ -32,6 +32,15 @@
 - proto path           → ../../../proto/ (3 levels from jasusi-core/)
 - UDS sockets          → TCP fallback on Windows (0.0.0.0:50051); UDS on Linux only
 
+## KAMEO 0.15 CONFIRMED API (from Phase 2)
+- NO kameo::prelude — use explicit: kameo::actor::*, kameo::message::*, kameo::error::Infallible
+- Actor trait REQUIRES: type Error = Infallible
+- BoxError does NOT exist — use String for fallible replies
+- Custom reply structs REQUIRE #[derive(kameo::Reply)]
+- .ask() FLATTENS Result replies — single .unwrap() not double
+- Proto types live at crate::rpc::proto::* NOT crate::rpc::server::*
+- kameo::spawn() NOT kameo::actor::spawn()
+
 ## POWERSHELL COMMAND TRANSLATIONS (Windows environment)
 tail -N        → Select-Object -Last N
 head -N        → Select-Object -First N
