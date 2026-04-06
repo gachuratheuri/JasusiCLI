@@ -69,6 +69,8 @@ impl SessionActor {
 pub struct ExecuteToolMsg {
     pub tool_name: String,
     pub input_json: bytes::Bytes,
+    pub sandbox_profile: crate::sandbox::profiles::SandboxProfile,
+    pub project_root: std::path::PathBuf,
 }
 
 #[derive(kameo::Reply)]
@@ -85,6 +87,13 @@ impl kameo::message::Message<ExecuteToolMsg> for SessionActor {
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.turn_count += 1;
+        let stack = crate::sandbox::stack::SandboxStack::new(
+            msg.sandbox_profile,
+            msg.project_root.clone(),
+        );
+        if let Err(e) = stack.apply() {
+            tracing::error!("Sandbox apply failed: {}", e);
+        }
         let (tx, rx) = mpsc::channel(32);
         let tool_name = msg.tool_name.clone();
 
