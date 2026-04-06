@@ -33,10 +33,15 @@ class Message:
 
 @dataclass
 class StreamChunk:
-    delta: str
-    is_final: bool
+    delta: str = ""
+    is_final: bool = False
+    tool_name: str = ""
+    tool_input_json: bytes = b""
+    tool_use_id: str = ""
+    is_tool_call: bool = False
     input_tokens: int = 0
     output_tokens: int = 0
+    stop_reason: str | None = None
 
 
 class ProviderError(Exception):
