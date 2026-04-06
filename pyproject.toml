@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "jasusicli"
+version = "0.1.0"
+description = "Jasusi — AI coding agent with dual Rust+Python architecture"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+keywords = ["ai", "coding-agent", "llm", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "httpx>=0.27",
+    "anyio>=4.4",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+memory = ["chromadb>=0.5"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "mypy>=1.10",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+jasusi = "jasusi_cli.cli.entry:main"
+
+[project.urls]
+Repository = "https://github.com/jasusi/jasusicli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jasusi_cli*"]
+
+[tool.pytest.ini_options]
+testpaths = ["jasusi_cli/tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "--tb=short -q"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+exclude = ["rust/", "target/"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
