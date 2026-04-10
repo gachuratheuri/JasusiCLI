@@ -1,7 +1,46 @@
+# Secrets
+.env
+*.env
+!.env.template
+
+# Python
 __pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Runtime artifacts
+uvicorn_err.log
+cli_debug.log
+*.log
+
+# ChromaDB / memory store
+.jasusi/
+chroma_db/
+*.chroma
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/settings.json
+.idea/
+*.suo
+*.user
+
+# Legacy / misc
 archive/
 .omx/
 .clawd-agents/
-# Claude Code local artifacts
+target/
+*.egg
 .claude/settings.local.json
 .claude/sessions/
