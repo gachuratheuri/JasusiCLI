@@ -69,7 +69,7 @@ class RuntimeFactory:
             api_client = MultiProviderClient(provider_clients=provider_clients)
 
         if tool_executor is None:
-            from jasusi_cli.tools.executor import ToolExecutor
+            from jasusi_cli.tools.tool_executor import ToolExecutor
 
             tool_executor = ToolExecutor(
                 cwd=self._cwd,

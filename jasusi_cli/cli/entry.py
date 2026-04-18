@@ -32,6 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     task_p = sub.add_parser("task", help="Run a one-shot task")
     task_p.add_argument("input", nargs="+", help="Task description")
+    run_p = sub.add_parser("run", help="Run a task via v3.2 orchestrator")
+    run_p.add_argument("input", nargs="+", help="Task description")
+    fix_p = sub.add_parser("fix", help="Fix a file via Developer + Reviewer pipeline")
+    fix_p.add_argument("filepath", help="Path to file to fix")
     sub.add_parser("chat", help="Start interactive REPL")
     sub.add_parser("status", help="Show session status")
     sub.add_parser("history", help="Show history log")
@@ -59,6 +63,9 @@ def run_cli(argv: list[str] | None = None) -> int:
         print(log.to_markdown())
         return 0
     if args.command == "status":
+        from jasusi_cli.main import _print_status
+
+        _print_status()
         from jasusi_cli.bootstrap.graph import BootstrapGraph
 
         ctx = BootstrapGraph(cwd=Path.cwd()).run_status_fast_path()
@@ -70,6 +77,19 @@ def run_cli(argv: list[str] | None = None) -> int:
                 print(f"  {s.session_id}  {s.project}")
         else:
             print("No session store available.")
+        return 0
+    if args.command == "fix":
+        from jasusi_cli.core.orchestrator import run_fix
+
+        result = run_fix(args.filepath, project=args.project)
+        print(result)
+        return 0
+    if args.command == "run":
+        task_text = " ".join(args.input)
+        from jasusi_cli.core.orchestrator import run_task
+
+        result = run_task(task_text, project=args.project)
+        print(result)
         return 0
     if args.command in ("chat", None, "task"):
         from jasusi_cli.cli.output import OutputFormat

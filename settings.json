@@ -1,0 +1,65 @@
+{
+  "system": { "version": "3.3.0" },
+  "providers": {
+    "openrouter": {
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1",
+      "extra_headers": {
+        "HTTP-Referer": "https://github.com/your-org/jasusicli",
+        "X-Title": "JasusiCLI-v3"
+      },
+      "free_tier_rpd": 50,
+      "funded_tier_rpd": 1000,
+      "note": "Load $10 once to unlock 1,000 RPD — credit never consumed on :free models"
+    },
+    "googleai": {
+      "api_key_env": "GOOGLE_AI_STUDIO_KEY",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"
+    }
+  },
+  "routing": {
+    "developer":  { "model": "gemini-2.5-flash",                   "provider": "googleai"   },
+    "executor":   { "model": "nvidia/nemotron-3-super-120b-a12b:free","provider": "openrouter" },
+    "architect":  { "model": "moonshotai/kimi-k2.5",                 "provider": "openrouter" },
+    "researcher": { "model": "gemini-2.5-pro",                       "provider": "googleai"   },
+    "reviewer":   { "model": "deepseek/deepseek-v3.2",               "provider": "openrouter" },
+    "compaction": { "model": "gemini-2.5-flash-lite",                "provider": "googleai"   }
+  },
+  "fallback_chain": [
+    { "model": "xiaomi/mimo-v2-flash:free",               "provider": "openrouter" },
+    { "model": "qwen/qwen3-coder:free",                   "provider": "openrouter" },
+    { "model": "nvidia/nemotron-3-super-120b-a12b:free",  "provider": "openrouter" },
+    { "model": "mistralai/devstral-2512:free",            "provider": "openrouter" }
+  ],
+  "reviewer_security": {
+    "strip_system_prompt_from_output": true,
+    "max_output_tokens": 2048,
+    "output_format": "structured_lint_only",
+    "warn_on_instruction_like_output": true,
+    "input_scope": "pipeline_generated_only",
+    "max_input_source_hops": 1
+  },
+  "rate_limits": {
+    "openrouter_free_rpd": 50,
+    "openrouter_funded_rpd": 1000,
+    "gemini_2_5_pro_rpd": 100,
+    "gemini_2_5_flash_rpd": 250,
+    "gemini_2_5_flash_lite_rpd": 1000,
+    "researcher_soft_cap_rpd": 90,
+    "gemini_2_5_flash_developer_rpd": 500
+  },
+  "compaction": {
+    "memory_flush_tokens": 4000,
+    "main_compact_tokens": 10000,
+    "deep_compact_tokens": 50000,
+    "preserve_recent_messages": 4,
+    "output_max_tokens": 2000,
+    "output_format": "markdown_structured",
+    "worm_ledger_write": true
+  },
+  "router": {
+    "confidence_threshold": 0.45,
+    "default_role": "developer",
+    "tie_break_priority": ["executor", "developer", "architect", "researcher", "reviewer"]
+  }
+}

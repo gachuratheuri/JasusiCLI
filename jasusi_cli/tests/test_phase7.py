@@ -250,7 +250,7 @@ def test_grep_search_finds_pattern(tmp_path: Path) -> None:
 
 
 # --- ToolExecutor integration tests ---
-from jasusi_cli.tools.executor import ToolExecutor
+from jasusi_cli.tools.tool_executor import ToolExecutor
 
 
 def test_executor_dispatches_file_read(tmp_path: Path) -> None:

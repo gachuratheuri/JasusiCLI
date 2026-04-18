@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 from jasusi_cli.cli.output import OutputEvent, OutputFormat, OutputFormatter
 from jasusi_cli.integration.wiring import RuntimeConfig, RuntimeFactory
@@ -20,6 +21,15 @@ class TaskRunner:
 
     def __init__(self, cwd: Path | None = None) -> None:
         self._cwd = cwd or Path.cwd()
+        self._api_client: Any | None = None
+        self._tool_executor: Any | None = None
+
+    def _inject_clients(
+        self, *, api_client: Any, tool_executor: Any,
+    ) -> None:
+        """Inject mock clients for testing — bypasses real provider setup."""
+        self._api_client = api_client
+        self._tool_executor = tool_executor
 
     def run(
         self,
@@ -42,6 +52,10 @@ class TaskRunner:
         output_format: str,
         simple_mode: bool,
     ) -> int:
+        if not task_input.strip():
+            logger.warning("TaskRunner: empty task input")
+            return 1
+
         fmt_map: dict[str, OutputFormat] = {
             "text": OutputFormat.TEXT,
             "json": OutputFormat.JSON,
@@ -56,7 +70,11 @@ class TaskRunner:
             simple_mode=simple_mode,
             task_input=task_input,
         )
-        runtime, _worm, _store = factory.build(config=cfg)
+        runtime, _worm, _store = factory.build(
+            config=cfg,
+            api_client=self._api_client,
+            tool_executor=self._tool_executor,
+        )
 
         stream = await runtime.submit(task_input)
         async for chunk in stream:

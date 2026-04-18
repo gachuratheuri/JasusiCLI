@@ -58,7 +58,7 @@ def test_status_fast_path_sees_existing_session(tmp_path: Path) -> None:
 
 
 def test_bootstrap_version_constant() -> None:
-    assert BootstrapGraph.VERSION == "0.1.0"
+    assert BootstrapGraph.VERSION == "0.14.0"
 
 
 # ---------------------------------------------------------------------------

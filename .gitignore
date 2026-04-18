@@ -36,6 +36,18 @@ desktop.ini
 *.suo
 *.user
 
+# Launch script / tunnel
+start_web.ps1
+cf_out.log
+cf_err.log
+
+# Scratch / debug output
+output.txt
+_smoke*.py
+_test*.py
+_check*.py
+_final*.py
+
 # Legacy / misc
 archive/
 .omx/

@@ -72,7 +72,7 @@ class BootstrapGraph:
     Phases 4a/4b (setup + commands) run in parallel via asyncio.gather.
     """
 
-    VERSION: str = "0.1.0"
+    VERSION: str = "0.14.0"
 
     def __init__(
         self,

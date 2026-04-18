@@ -26,7 +26,7 @@ from jasusi_cli.memory.session_store import SessionStore
 from jasusi_cli.routing.scored_router import ScoredRouter
 from jasusi_cli.security.injection_guard import clean as injection_clean
 from jasusi_cli.security.prompt_builder import SystemPromptBuilder
-from jasusi_cli.tools.executor import ToolExecutor
+from jasusi_cli.tools.tool_executor import ToolExecutor
 from jasusi_cli.tools.permissions import AutoAllowPrompter, PermissionMode, PermissionPolicy
 from jasusi_cli.tools.registry import MAX_TOOLS, ToolRegistry
 from jasusi_cli.tools.schema import ToolParameter, ToolSpec
