@@ -55,23 +55,21 @@ jasusi task "refactor this function to use list comprehension"
 jasusi fix myfile.py
 ```
 
-### 4. Run the Web UI
+### 4. Run the Web UI (LOCAL DEVELOPMENT ONLY)
+
+> [!WARNING]
+> **Security Containment Notice (Phase 0 Governance Active)**:
+> Remote exposure, public tunneling (e.g. ngrok, Cloudflare Tunnels), and binding to non-loopback network interfaces (`0.0.0.0`) are **STRICTLY SUSPENDED** until Phase 3 (Gate G3) security verification completes. The web interface MUST ONLY be run locally on `127.0.0.1`.
 
 ```bash
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
-# Open: http://localhost:8000
+uvicorn app:app --reload --host 127.0.0.1 --port 8000
+# Open: http://127.0.0.1:8000
 ```
 
-### 5. Share publicly (optional)
+### 5. Remote Exposure (SUSPENDED)
 
-Install [ngrok](https://ngrok.com):
+Public tunneling and remote exposure features are currently **DISABLED** pending Phase 3 security kernel implementation and formal authorization controls. Do not expose this service on public networks or tunnels.
 
-```bash
-ngrok http 8000
-```
-
-Set `UI_PASSWORD` in `.env` before sharing the ngrok URL. Anyone with
-the link and password can use the UI against your API keys — quota applies.
 
 ---
 

@@ -19,7 +19,7 @@ use crate::mcp_lifecycle_hardened::{
 };
 
 #[cfg(test)]
-const MCP_INITIALIZE_TIMEOUT_MS: u64 = 200;
+const MCP_INITIALIZE_TIMEOUT_MS: u64 = 5000;
 #[cfg(not(test))]
 const MCP_INITIALIZE_TIMEOUT_MS: u64 = 10_000;
 
@@ -360,8 +360,10 @@ impl McpServerManagerError {
     }
 
     fn recoverable(&self) -> bool {
-        !matches!(self.lifecycle_phase(), McpLifecyclePhase::InitializeHandshake)
-            && matches!(self, Self::Transport { .. } | Self::Timeout { .. })
+        !matches!(
+            self.lifecycle_phase(),
+            McpLifecyclePhase::InitializeHandshake
+        ) && matches!(self, Self::Transport { .. } | Self::Timeout { .. })
     }
 
     fn discovery_failure(&self, server_name: &str) -> McpDiscoveryFailure {
@@ -417,10 +419,9 @@ impl McpServerManagerError {
                 ("method".to_string(), (*method).to_string()),
                 ("timeout_ms".to_string(), timeout_ms.to_string()),
             ]),
-            Self::UnknownTool { qualified_name } => BTreeMap::from([(
-                "qualified_tool".to_string(),
-                qualified_name.clone(),
-            )]),
+            Self::UnknownTool { qualified_name } => {
+                BTreeMap::from([("qualified_tool".to_string(), qualified_name.clone())])
+            }
             Self::UnknownServer { server_name } => {
                 BTreeMap::from([("server".to_string(), server_name.clone())])
             }
@@ -1409,6 +1410,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::io::ErrorKind;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1425,11 +1427,10 @@ mod tests {
     use crate::mcp_client::McpClientBootstrap;
 
     use super::{
-        spawn_mcp_stdio_process, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
-        McpInitializeClientInfo, McpInitializeParams, McpInitializeResult, McpInitializeServerInfo,
-        McpListToolsResult, McpReadResourceParams, McpReadResourceResult, McpServerManager,
-        McpServerManagerError, McpStdioProcess, McpTool, McpToolCallParams,
-        unsupported_server_failed_server,
+        spawn_mcp_stdio_process, unsupported_server_failed_server, JsonRpcId, JsonRpcRequest,
+        JsonRpcResponse, McpInitializeClientInfo, McpInitializeParams, McpInitializeResult,
+        McpInitializeServerInfo, McpListToolsResult, McpReadResourceParams, McpReadResourceResult,
+        McpServerManager, McpServerManagerError, McpStdioProcess, McpTool, McpToolCallParams,
     };
     use crate::McpLifecyclePhase;
 
@@ -1446,15 +1447,20 @@ mod tests {
     fn write_echo_script() -> PathBuf {
         let root = temp_dir();
         fs::create_dir_all(&root).expect("temp dir");
-        let script_path = root.join("echo-mcp.sh");
-        fs::write(
-            &script_path,
-            "#!/bin/sh\nprintf 'READY:%s\\n' \"$MCP_TEST_TOKEN\"\nIFS= read -r line\nprintf 'ECHO:%s\\n' \"$line\"\n",
-        )
-        .expect("write script");
-        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions).expect("chmod");
+        let script_path = root.join("echo-mcp.py");
+        let script = [
+            "import os, sys",
+            "token = os.environ.get('MCP_TEST_TOKEN', '')",
+            "sys.stdout.buffer.write(f'READY:{token}\\n'.encode())",
+            "sys.stdout.buffer.flush()",
+            "line = sys.stdin.buffer.readline()",
+            "if line:",
+            "    sys.stdout.buffer.write(b'ECHO:' + line)",
+            "    sys.stdout.buffer.flush()",
+            "",
+        ]
+        .join("\n");
+        fs::write(&script_path, script).expect("write script");
         script_path
     }
 
@@ -1498,9 +1504,12 @@ mod tests {
         ]
         .join("\n");
         fs::write(&script_path, script).expect("write script");
-        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions).expect("chmod");
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions).expect("chmod");
+        }
         script_path
     }
 
@@ -1632,9 +1641,12 @@ mod tests {
         ]
         .join("\n");
         fs::write(&script_path, script).expect("write script");
-        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions).expect("chmod");
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions).expect("chmod");
+        }
         script_path
     }
 
@@ -1757,9 +1769,12 @@ mod tests {
         ]
         .join("\n");
         fs::write(&script_path, script).expect("write script");
-        let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&script_path, permissions).expect("chmod");
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions).expect("chmod");
+        }
         script_path
     }
 
@@ -1767,8 +1782,8 @@ mod tests {
         let config = ScopedMcpServerConfig {
             scope: ConfigSource::Local,
             config: McpServerConfig::Stdio(McpStdioServerConfig {
-                command: "/bin/sh".to_string(),
-                args: vec![script_path.to_string_lossy().into_owned()],
+                command: python_cmd(),
+                args: vec!["-u".to_string(), script_path.to_string_lossy().into_owned()],
                 env: BTreeMap::from([("MCP_TEST_TOKEN".to_string(), "secret-value".to_string())]),
                 tool_call_timeout_ms: None,
             }),
@@ -1780,13 +1795,21 @@ mod tests {
         script_transport_with_env(script_path, BTreeMap::new())
     }
 
+    fn python_cmd() -> String {
+        if cfg!(windows) {
+            "python".to_string()
+        } else {
+            "python3".to_string()
+        }
+    }
+
     fn script_transport_with_env(
         script_path: &Path,
         env: BTreeMap<String, String>,
     ) -> crate::mcp_client::McpStdioTransport {
         crate::mcp_client::McpStdioTransport {
-            command: "python3".to_string(),
-            args: vec![script_path.to_string_lossy().into_owned()],
+            command: python_cmd(),
+            args: vec!["-u".to_string(), script_path.to_string_lossy().into_owned()],
             env,
             tool_call_timeout_ms: None,
         }
@@ -1834,8 +1857,8 @@ mod tests {
         ScopedMcpServerConfig {
             scope: ConfigSource::Local,
             config: McpServerConfig::Stdio(McpStdioServerConfig {
-                command: "python3".to_string(),
-                args: vec![script_path.to_string_lossy().into_owned()],
+                command: python_cmd(),
+                args: vec!["-u".to_string(), script_path.to_string_lossy().into_owned()],
                 env,
                 tool_call_timeout_ms: None,
             }),
@@ -2053,8 +2076,8 @@ mod tests {
         runtime.block_on(async {
             let script_path = write_echo_script();
             let transport = crate::mcp_client::McpStdioTransport {
-                command: "/bin/sh".to_string(),
-                args: vec![script_path.to_string_lossy().into_owned()],
+                command: python_cmd(),
+                args: vec!["-u".to_string(), script_path.to_string_lossy().into_owned()],
                 env: BTreeMap::from([("MCP_TEST_TOKEN".to_string(), "direct-secret".to_string())]),
                 tool_call_timeout_ms: None,
             };
@@ -2312,8 +2335,8 @@ mod tests {
                 ScopedMcpServerConfig {
                     scope: ConfigSource::Local,
                     config: McpServerConfig::Stdio(McpStdioServerConfig {
-                        command: "python3".to_string(),
-                        args: vec![script_path.to_string_lossy().into_owned()],
+                        command: python_cmd(),
+                        args: vec!["-u".to_string(), script_path.to_string_lossy().into_owned()],
                         env: BTreeMap::from([(
                             "MCP_TOOL_CALL_DELAY_MS".to_string(),
                             "200".to_string(),
@@ -2365,8 +2388,8 @@ mod tests {
                 ScopedMcpServerConfig {
                     scope: ConfigSource::Local,
                     config: McpServerConfig::Stdio(McpStdioServerConfig {
-                        command: "python3".to_string(),
-                        args: vec![script_path.to_string_lossy().into_owned()],
+                        command: python_cmd(),
+                        args: vec!["-u".to_string(), script_path.to_string_lossy().into_owned()],
                         env: BTreeMap::from([(
                             "MCP_INVALID_TOOL_CALL_RESPONSE".to_string(),
                             "1".to_string(),
@@ -2673,7 +2696,7 @@ mod tests {
                     ScopedMcpServerConfig {
                         scope: ConfigSource::Local,
                         config: McpServerConfig::Stdio(McpStdioServerConfig {
-                            command: "python3".to_string(),
+                            command: python_cmd(),
                             args: vec!["-c".to_string(), "import sys; sys.exit(0)".to_string()],
                             env: BTreeMap::new(),
                             tool_call_timeout_ms: None,
@@ -2698,7 +2721,10 @@ mod tests {
             );
             assert!(!report.failed_servers[0].recoverable);
             assert_eq!(
-                report.failed_servers[0].context.get("method").map(String::as_str),
+                report.failed_servers[0]
+                    .context
+                    .get("method")
+                    .map(String::as_str),
                 Some("initialize")
             );
             assert!(report.failed_servers[0].error.contains("initialize"));

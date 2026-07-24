@@ -4,8 +4,13 @@ use std::collections::HashSet;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FirewallVerdict {
     Allow,
-    Deny { reason: String },
-    Quarantine { threat_class: String, fragment: String },
+    Deny {
+        reason: String,
+    },
+    Quarantine {
+        threat_class: String,
+        fragment: String,
+    },
 }
 
 pub struct SemanticFirewall {

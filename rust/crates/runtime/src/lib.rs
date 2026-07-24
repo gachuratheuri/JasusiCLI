@@ -10,6 +10,7 @@ mod bootstrap;
 mod compact;
 mod config;
 mod conversation;
+pub mod credentials;
 mod file_ops;
 pub mod green_contract;
 mod hooks;
@@ -29,6 +30,7 @@ mod policy_engine;
 mod prompt;
 pub mod recovery_recipes;
 mod remote;
+pub mod router;
 pub mod sandbox;
 mod session;
 pub mod session_control;
@@ -38,6 +40,7 @@ pub mod summary_compression;
 pub mod task_packet;
 pub mod task_registry;
 pub mod team_cron_registry;
+pub mod transactional_patch;
 pub mod trust_resolver;
 mod usage;
 pub mod worker_boot;
@@ -61,6 +64,7 @@ pub use conversation::{
     ConversationRuntime, PromptCacheEvent, RuntimeError, StaticToolExecutor, ToolError,
     ToolExecutor, TurnSummary,
 };
+pub use credentials::{redact_credentials, redact_environment, write_secure_credential_file};
 pub use file_ops::{
     edit_file, glob_search, grep_search, read_file, write_file, EditFileOutput, GlobSearchOutput,
     GrepSearchInput, GrepSearchOutput, ReadFileOutput, StructuredPatchHunk, TextFilePayload,
@@ -101,8 +105,9 @@ pub use oauth::{
     PkceChallengeMethod, PkceCodePair,
 };
 pub use permissions::{
-    PermissionContext, PermissionMode, PermissionOutcome, PermissionOverride, PermissionPolicy,
-    PermissionPromptDecision, PermissionPrompter, PermissionRequest,
+    is_path_safe_in_workspace, Capability, CapabilitySet, PermissionContext, PermissionMode,
+    PermissionOutcome, PermissionOverride, PermissionPolicy, PermissionPromptDecision,
+    PermissionPrompter, PermissionRequest,
 };
 pub use plugin_lifecycle::{
     DegradedMode, DiscoveryResult, PluginHealthcheck, PluginLifecycle, PluginLifecycleEvent,
@@ -125,11 +130,12 @@ pub use remote::{
     RemoteSessionContext, UpstreamProxyBootstrap, UpstreamProxyState, DEFAULT_REMOTE_BASE_URL,
     DEFAULT_SESSION_TOKEN_PATH, DEFAULT_SYSTEM_CA_BUNDLE, NO_PROXY_HOSTS, UPSTREAM_PROXY_ENV_KEYS,
 };
+pub use router::{route as score_route, score_query, AgentRole, RouteResult};
 pub use sandbox::{
     build_linux_sandbox_command, detect_container_environment, detect_container_environment_from,
-    resolve_sandbox_status, resolve_sandbox_status_for_request, ContainerEnvironment,
-    FilesystemIsolationMode, LinuxSandboxCommand, SandboxConfig, SandboxDetectionInputs,
-    SandboxRequest, SandboxStatus,
+    resolve_sandbox_status, resolve_sandbox_status_for_request, validate_execution_allowed,
+    ContainerEnvironment, FilesystemIsolationMode, LinuxSandboxCommand, SandboxConfig,
+    SandboxDetectionInputs, SandboxRequest, SandboxStatus, WindowsSandboxCommand,
 };
 pub use session::{
     ContentBlock, ConversationMessage, MessageRole, Session, SessionCompaction, SessionError,
@@ -141,6 +147,10 @@ pub use stale_branch::{
     StaleBranchPolicy,
 };
 pub use task_packet::{validate_packet, TaskPacket, TaskPacketValidationError, ValidatedPacket};
+pub use transactional_patch::{
+    compute_sha256, rollback_transaction, validate_and_apply_patch, PatchError, PatchHunk,
+    PatchValidationReport, RollbackRecord, StructuredPatch,
+};
 pub use trust_resolver::{TrustConfig, TrustDecision, TrustEvent, TrustPolicy, TrustResolver};
 pub use usage::{
     format_usd, pricing_for_model, ModelPricing, TokenUsage, UsageCostEstimate, UsageTracker,

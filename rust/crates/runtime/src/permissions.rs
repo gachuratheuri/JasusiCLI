@@ -1,11 +1,136 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::RuntimePermissionRuleConfig;
 
+/// Fine-grained explicit capability model (F04).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Capability {
+    Read,
+    Create,
+    Overwrite,
+    Delete,
+    Execute,
+    Network,
+    SecretAccess,
+    OutOfWorkspaceAccess,
+}
+
+impl Capability {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Create => "create",
+            Self::Overwrite => "overwrite",
+            Self::Delete => "delete",
+            Self::Execute => "execute",
+            Self::Network => "network",
+            Self::SecretAccess => "secret-access",
+            Self::OutOfWorkspaceAccess => "out-of-workspace-access",
+        }
+    }
+}
+
+/// Set of granted or requested capabilities.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct CapabilitySet {
+    capabilities: BTreeSet<Capability>,
+}
+
+impl CapabilitySet {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            capabilities: BTreeSet::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn all() -> Self {
+        let mut set = BTreeSet::new();
+        set.insert(Capability::Read);
+        set.insert(Capability::Create);
+        set.insert(Capability::Overwrite);
+        set.insert(Capability::Delete);
+        set.insert(Capability::Execute);
+        set.insert(Capability::Network);
+        set.insert(Capability::SecretAccess);
+        set.insert(Capability::OutOfWorkspaceAccess);
+        Self { capabilities: set }
+    }
+
+    #[must_use]
+    pub fn read_only() -> Self {
+        let mut set = BTreeSet::new();
+        set.insert(Capability::Read);
+        Self { capabilities: set }
+    }
+
+    #[must_use]
+    pub fn workspace_write() -> Self {
+        let mut set = BTreeSet::new();
+        set.insert(Capability::Read);
+        set.insert(Capability::Create);
+        set.insert(Capability::Overwrite);
+        set.insert(Capability::Delete);
+        Self { capabilities: set }
+    }
+
+    pub fn grant(&mut self, cap: Capability) {
+        self.capabilities.insert(cap);
+    }
+
+    pub fn revoke(&mut self, cap: Capability) {
+        self.capabilities.remove(&cap);
+    }
+
+    #[must_use]
+    pub fn contains(&self, cap: Capability) -> bool {
+        self.capabilities.contains(&cap)
+    }
+
+    #[must_use]
+    pub fn is_subset(&self, parent: &CapabilitySet) -> bool {
+        self.capabilities.is_subset(&parent.capabilities)
+    }
+}
+
+/// Verify if target path resolves strictly inside workspace root without symlink escape.
+#[must_use]
+pub fn is_path_safe_in_workspace(target: &Path, workspace_root: &Path) -> bool {
+    let canonical_root = match workspace_root.canonicalize() {
+        Ok(p) => p,
+        Err(_) => workspace_root.to_path_buf(),
+    };
+
+    let target_canonical = if target.exists() {
+        match target.canonicalize() {
+            Ok(p) => p,
+            Err(_) => target.to_path_buf(),
+        }
+    } else if let Some(parent) = target.parent() {
+        if parent.exists() {
+            match parent.canonicalize() {
+                Ok(p) => p.join(target.file_name().unwrap_or_default()),
+                Err(_) => target.to_path_buf(),
+            }
+        } else {
+            target.to_path_buf()
+        }
+    } else {
+        target.to_path_buf()
+    };
+
+    target_canonical.starts_with(canonical_root)
+}
+
 /// Permission level assigned to a tool invocation or runtime session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionMode {
     ReadOnly,
     WorkspaceWrite,
@@ -24,6 +149,16 @@ impl PermissionMode {
             Self::Prompt => "prompt",
             Self::Allow => "allow",
         }
+    }
+
+    #[must_use]
+    pub fn satisfies(self, required: PermissionMode) -> bool {
+        matches!(
+            (self, required),
+            (Self::Allow | Self::DangerFullAccess, _)
+                | (Self::WorkspaceWrite, Self::WorkspaceWrite | Self::ReadOnly)
+                | (Self::ReadOnly, Self::ReadOnly)
+        )
     }
 }
 
@@ -233,7 +368,7 @@ impl PermissionPolicy {
                 }
                 if allow_rule.is_some()
                     || current_mode == PermissionMode::Allow
-                    || current_mode >= required_mode
+                    || current_mode.satisfies(required_mode)
                 {
                     return PermissionOutcome::Allow;
                 }
@@ -258,7 +393,7 @@ impl PermissionPolicy {
 
         if allow_rule.is_some()
             || current_mode == PermissionMode::Allow
-            || current_mode >= required_mode
+            || current_mode.satisfies(required_mode)
         {
             return PermissionOutcome::Allow;
         }
@@ -672,12 +807,61 @@ mod tests {
         };
 
         let outcome = policy.authorize_with_context("bash", "{}", &context, Some(&mut prompter));
-
         assert_eq!(outcome, PermissionOutcome::Allow);
         assert_eq!(prompter.seen.len(), 1);
         assert_eq!(
             prompter.seen[0].reason.as_deref(),
             Some("hook requested confirmation")
         );
+    }
+
+    #[test]
+    fn prompt_mode_denies_in_non_interactive_mode_without_prompter() {
+        let policy = PermissionPolicy::new(PermissionMode::Prompt)
+            .with_tool_requirement("bash", PermissionMode::DangerFullAccess)
+            .with_tool_requirement("write_file", PermissionMode::WorkspaceWrite)
+            .with_tool_requirement("read_file", PermissionMode::ReadOnly);
+
+        // In non-interactive mode (prompter = None), Prompt mode MUST NEVER silently allow any tool
+        assert!(matches!(
+            policy.authorize("bash", "{}", None),
+            PermissionOutcome::Deny { .. }
+        ));
+        assert!(matches!(
+            policy.authorize("write_file", "{}", None),
+            PermissionOutcome::Deny { .. }
+        ));
+        assert!(matches!(
+            policy.authorize("read_file", "{}", None),
+            PermissionOutcome::Deny { .. }
+        ));
+    }
+
+    #[test]
+    fn prompt_mode_invokes_prompter_when_present() {
+        let policy = PermissionPolicy::new(PermissionMode::Prompt)
+            .with_tool_requirement("bash", PermissionMode::DangerFullAccess);
+
+        let mut deny_prompter = RecordingPrompter {
+            seen: Vec::new(),
+            allow: false,
+        };
+        assert_eq!(
+            policy.authorize("bash", "{}", Some(&mut deny_prompter)),
+            PermissionOutcome::Deny {
+                reason: "not now".to_string()
+            }
+        );
+        assert_eq!(deny_prompter.seen.len(), 1);
+
+        let mut allow_prompter = RecordingPrompter {
+            seen: Vec::new(),
+            allow: true,
+        };
+        assert_eq!(
+            policy.authorize("bash", "{}", Some(&mut allow_prompter)),
+            PermissionOutcome::Allow
+        );
+        assert_eq!(allow_prompter.seen.len(), 1);
     }
 }

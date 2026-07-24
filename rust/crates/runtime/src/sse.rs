@@ -11,6 +11,7 @@ pub struct SseEvent {
 #[derive(Debug, Clone, Default)]
 pub struct IncrementalSseParser {
     buffer: String,
+    byte_buffer: Vec<u8>,
     event_name: Option<String>,
     data_lines: Vec<String>,
     id: Option<String>,
@@ -21,6 +22,32 @@ impl IncrementalSseParser {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn push_bytes(&mut self, chunk: &[u8]) -> Vec<SseEvent> {
+        self.byte_buffer.extend_from_slice(chunk);
+        let mut events = Vec::new();
+
+        match std::str::from_utf8(&self.byte_buffer) {
+            Ok(valid_str) => {
+                let str_chunk = valid_str.to_string();
+                self.byte_buffer.clear();
+                events.extend(self.push_chunk(&str_chunk));
+            }
+            Err(e) => {
+                let valid_up_to = e.valid_up_to();
+                if valid_up_to > 0 {
+                    let valid_str = match std::str::from_utf8(&self.byte_buffer[..valid_up_to]) {
+                        Ok(s) => s.to_string(),
+                        Err(_) => String::new(),
+                    };
+                    self.byte_buffer.drain(..valid_up_to);
+                    events.extend(self.push_chunk(&valid_str));
+                }
+            }
+        }
+
+        events
     }
 
     pub fn push_chunk(&mut self, chunk: &str) -> Vec<SseEvent> {
@@ -43,6 +70,12 @@ impl IncrementalSseParser {
 
     pub fn finish(&mut self) -> Vec<SseEvent> {
         let mut events = Vec::new();
+        if !self.byte_buffer.is_empty() {
+            let bytes = std::mem::take(&mut self.byte_buffer);
+            if let Ok(valid_str) = std::str::from_utf8(&bytes) {
+                events.extend(self.push_chunk(valid_str));
+            }
+        }
         if !self.buffer.is_empty() {
             let line = std::mem::take(&mut self.buffer);
             self.process_line(line.trim_end_matches('\r'), &mut events);
@@ -154,5 +187,23 @@ mod tests {
                 retry: None,
             }]
         );
+    }
+
+    #[test]
+    fn parses_split_utf8_bytes() {
+        let mut parser = IncrementalSseParser::new();
+        let full = "data: hello 🦀 world\n\n";
+        let bytes = full.as_bytes();
+
+        // Split in middle of crab emoji (4-byte UTF-8 sequence)
+        let chunk1 = &bytes[..14];
+        let chunk2 = &bytes[14..];
+
+        let events1 = parser.push_bytes(chunk1);
+        assert!(events1.is_empty());
+
+        let events2 = parser.push_bytes(chunk2);
+        assert_eq!(events2.len(), 1);
+        assert_eq!(events2[0].data, "hello 🦀 world");
     }
 }

@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-app = FastAPI(title="JasusiCLI Web UI", version="3.3.0")
+app = FastAPI(title="JasusiCLI Web UI", version="3.0.0")
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -51,12 +51,21 @@ async def auth_gate(request: Request, call_next):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
+LOCAL_ALLOWED_ORIGINS = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=LOCAL_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -181,7 +190,7 @@ async def get_status():
         return "red"
 
     return {
-        "version": "3.3.0",
+        "version": "3.0.0",
         "keys": {
             "openrouter": bool(os.environ.get("OPENROUTER_API_KEY")),
             "google_ai":  bool(os.environ.get("GOOGLE_AI_STUDIO_KEY")),
@@ -202,28 +211,63 @@ async def get_status():
     }
 
 
-@app.get("/api/task/stream")
-async def stream_task(
-    prompt:  str = Query(...,       description="Task prompt"),
-    project: str = Query("web",    description="Project name"),
-    _key:    str = Query("",       description="Auth key (SSE fallback)"),
-):
-    """Stream a jasusi task via SSE."""
-    if not prompt.strip():
+import re
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_PROMPT_CHARS = 100_000
+
+
+class TaskRequest(BaseModel):
+    prompt: str
+    project: str = "web"
+
+
+def validate_project_id(project: str) -> str:
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", project):
+        raise HTTPException(400, "invalid project identifier")
+    return project
+
+
+def canonicalize_path(target_path: str | Path, base_dir: Path | None = None) -> Path:
+    base = (base_dir or Path.cwd()).resolve()
+    target = Path(target_path)
+    resolved = (base / target).resolve() if not target.is_absolute() else target.resolve()
+    if not str(resolved).startswith(str(base)):
+        raise HTTPException(400, "path traversal violation: path outside workspace root")
+    return resolved
+
+
+async def _stream_in_process(func, *args, **kwargs) -> AsyncGenerator[str, None]:
+    """Run an orchestrator function in a worker thread and stream classified SSE output lines."""
+    clf_state: dict = {"in_code": False}
+    try:
+        result_text = await asyncio.to_thread(func, *args, **kwargs)
+        for line in result_text.splitlines():
+            if not line.strip():
+                continue
+            event_type = classify_line(line, clf_state)
+            payload = json.dumps({"type": event_type, "text": line})
+            yield f"data: {payload}\n\n"
+        yield f'data: {json.dumps({"type": "done", "status": "success", "code": 0})}\n\n'
+    except Exception as e:
+        err_payload = json.dumps({"type": "error", "text": str(e)})
+        yield f"data: {err_payload}\n\n"
+        yield f'data: {json.dumps({"type": "done", "status": "error", "code": 1})}\n\n'
+
+
+@app.post("/api/task/stream")
+async def stream_task(req: TaskRequest, request: Request):
+    """Stream a jasusi task via SSE (POST JSON body)."""
+    if not req.prompt.strip():
         raise HTTPException(400, "prompt required")
-    # Call the orchestrator directly — the CLI entry point swallows output
-    import shlex
-    escaped_prompt = prompt.replace("\\", "\\\\").replace("'", "\\'")
-    escaped_project = project.replace("\\", "\\\\").replace("'", "\\'")
-    script = (
-        "import sys; sys.path.insert(0,'.'); "
-        "from jasusi_cli.core.orchestrator import run_task; "
-        f"result = run_task('{escaped_prompt}', project='{escaped_project}'); "
-        "print(result)"
-    )
-    cmd = [sys.executable, "-u", "-c", script]
+    if len(req.prompt) > MAX_PROMPT_CHARS:
+        raise HTTPException(400, f"prompt exceeds maximum character limit of {MAX_PROMPT_CHARS}")
+    project = validate_project_id(req.project)
+
+    from jasusi_cli.core.orchestrator import run_task
+
     return StreamingResponse(
-        _stream_process(cmd),
+        _stream_in_process(run_task, req.prompt, project=project),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -231,31 +275,37 @@ async def stream_task(
 
 @app.post("/api/fix/stream")
 async def stream_fix(
-    file:    UploadFile = File(...),
-    project: str        = Form("web"),
-    _key:    str        = Query("",  description="Auth key (SSE fallback)"),
+    file: UploadFile = File(...),
+    project: str = Form("web"),
 ):
-    """Upload a file, run jasusi fix on it, stream the output."""
-    suffix = Path(file.filename).suffix or ".py"
-    with tempfile.NamedTemporaryFile(
-        delete=False, suffix=suffix, prefix="jasusi_fix_"
-    ) as tmp:
-        tmp.write(await file.read())
+    """Upload a file, run jasusi fix in preview mode, stream output."""
+    validated_project = validate_project_id(project)
+    safe_filename = Path(file.filename or "fix.py").name
+    if ".." in safe_filename or "/" in safe_filename or "\\" in safe_filename:
+        raise HTTPException(400, "invalid filename: path traversal characters detected")
+
+    suffix = Path(safe_filename).suffix or ".py"
+
+    # Enforce streaming 10MB upload limit
+    total_bytes = 0
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="jasusi_fix_") as tmp:
+        while chunk := await file.read(65536):
+            total_bytes += len(chunk)
+            if total_bytes > MAX_UPLOAD_BYTES:
+                tmp.close()
+                try:
+                    os.unlink(tmp.name)
+                except Exception:
+                    pass
+                raise HTTPException(413, "upload payload exceeds 10MB limit")
+            tmp.write(chunk)
         tmp_path = tmp.name
 
-    escaped_path = tmp_path.replace("\\", "\\\\").replace("'", "\\'")
-    escaped_project = project.replace("\\", "\\\\").replace("'", "\\'")
-    script = (
-        "import sys; sys.path.insert(0,'.'); "
-        "from jasusi_cli.core.orchestrator import run_fix; "
-        f"result = run_fix('{escaped_path}', project='{escaped_project}'); "
-        "print(result)"
-    )
-    cmd = [sys.executable, "-u", "-c", script]
+    from jasusi_cli.core.orchestrator import run_fix
 
     async def _cleanup_stream():
         try:
-            async for chunk in _stream_process(cmd):
+            async for chunk in _stream_in_process(run_fix, tmp_path, project=validated_project, preview_only=True):
                 yield chunk
         finally:
             try:
@@ -273,12 +323,13 @@ async def stream_fix(
 @app.get("/api/memory")
 async def get_memory(project: str = "web"):
     """Return WormLedger entries for the given project."""
+    validated_project = validate_project_id(project)
     try:
         sys.path.insert(0, ".")
         from jasusi_cli.core.memory import JasusiMemory
-        mem = JasusiMemory(project=project)
+        mem = JasusiMemory(project=validated_project)
         context = mem.load_project_context(query="")
-        return {"project": project, "context": context}
+        return {"project": validated_project, "context": context}
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -286,11 +337,12 @@ async def get_memory(project: str = "web"):
 @app.delete("/api/memory")
 async def wipe_memory(project: str = "web"):
     """Wipe WormLedger for the given project."""
+    validated_project = validate_project_id(project)
     try:
         sys.path.insert(0, ".")
         from jasusi_cli.core.memory import JasusiMemory
-        JasusiMemory(project=project).wipe()
-        return {"wiped": True, "project": project}
+        JasusiMemory(project=validated_project).wipe()
+        return {"wiped": True, "project": validated_project}
     except Exception as e:
         raise HTTPException(500, str(e))
 

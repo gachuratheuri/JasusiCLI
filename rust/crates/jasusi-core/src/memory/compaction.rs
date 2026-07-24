@@ -168,8 +168,9 @@ mod tests {
 
     #[test]
     fn test_compact_main_preserves_recent_4() {
-        let entries: Vec<TranscriptEntry> =
-            (0..10).map(|i| make_entry("user", &format!("msg {i}"), i)).collect();
+        let entries: Vec<TranscriptEntry> = (0..10)
+            .map(|i| make_entry("user", &format!("msg {i}"), i))
+            .collect();
         let result = compact_main(&entries, "summary");
         assert_eq!(result.len(), 5);
         assert_eq!(result.last().unwrap().turn_seq, 9);
@@ -177,8 +178,7 @@ mod tests {
 
     #[test]
     fn test_compact_main_small_transcript_unchanged_count() {
-        let entries: Vec<TranscriptEntry> =
-            (0..3).map(|i| make_entry("user", "msg", i)).collect();
+        let entries: Vec<TranscriptEntry> = (0..3).map(|i| make_entry("user", "msg", i)).collect();
         let result = compact_main(&entries, "summary");
         assert_eq!(result.len(), 3);
     }
@@ -186,8 +186,7 @@ mod tests {
     #[test]
     fn test_compact_main_summary_truncated_to_160_chars() {
         let long_summary = "x".repeat(300);
-        let entries: Vec<TranscriptEntry> =
-            (0..8).map(|i| make_entry("user", "msg", i)).collect();
+        let entries: Vec<TranscriptEntry> = (0..8).map(|i| make_entry("user", "msg", i)).collect();
         let result = compact_main(&entries, &long_summary);
         let summary_content = &result[0].content[0].content;
         assert!(summary_content.len() <= "[COMPACTED CONTEXT]: ".len() + 160);
@@ -210,8 +209,7 @@ mod tests {
 
     #[test]
     fn test_deep_compaction_summary_contains_session_id() {
-        let entries: Vec<TranscriptEntry> =
-            (0..5).map(|i| make_entry("user", "msg", i)).collect();
+        let entries: Vec<TranscriptEntry> = (0..5).map(|i| make_entry("user", "msg", i)).collect();
         let summary = compact_deep_summary(&entries, "my-session-123");
         assert!(summary.contains("my-session-123"));
         assert!(summary.contains("**Turns:** 5"));

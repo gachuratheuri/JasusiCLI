@@ -1455,7 +1455,19 @@ mod tests {
 
     #[cfg(windows)]
     fn shell_snippet(script: &str) -> String {
-        script.replace('\'', "\"")
+        let s = script.to_string();
+        if s.starts_with("printf ") {
+            let msg = s
+                .trim_start_matches("printf ")
+                .trim_matches('\'')
+                .trim_matches('"');
+            if let Some((text, exit_code)) = msg.split_once("; exit ") {
+                let text_clean = text.trim_matches('\'').trim_matches('"');
+                return format!("echo {text_clean} & exit /b {exit_code}");
+            }
+            return format!("echo {msg}");
+        }
+        s.replace('\'', "\"")
     }
 
     #[cfg(not(windows))]

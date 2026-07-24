@@ -1,4 +1,5 @@
 use std::env;
+#[cfg(unix)]
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -55,6 +56,7 @@ pub struct SandboxStatus {
     pub requested: SandboxRequest,
     pub supported: bool,
     pub active: bool,
+    pub verifiable_isolation: bool,
     pub namespace_supported: bool,
     pub namespace_active: bool,
     pub network_supported: bool,
@@ -65,6 +67,14 @@ pub struct SandboxStatus {
     pub in_container: bool,
     pub container_markers: Vec<String>,
     pub fallback_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowsSandboxCommand {
+    pub program: String,
+    pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub job_object_active: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +90,21 @@ pub struct LinuxSandboxCommand {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+}
+
+/// Fail-closed execution gate: denies shell/write tools when sandboxing is inactive unless `unsafe_local_mode` is set.
+pub fn validate_execution_allowed(
+    status: &SandboxStatus,
+    unsafe_local_mode: bool,
+    is_write_or_shell: bool,
+) -> Result<(), String> {
+    if is_write_or_shell && !status.active && !unsafe_local_mode {
+        return Err(
+            "Security Denial: OS sandboxing is inactive/unsupported on this system and `--unsafe-local-mode` was not explicitly granted (F05)."
+                .to_string(),
+        );
+    }
+    Ok(())
 }
 
 impl SandboxConfig {
@@ -107,11 +132,23 @@ impl SandboxConfig {
 
 #[must_use]
 pub fn detect_container_environment() -> ContainerEnvironment {
+    // Linux/Unix-specific paths are probed only on Unix targets.
+    // On Windows, these paths do not exist and we skip the probe at compile time.
+    #[cfg(unix)]
     let proc_1_cgroup = fs::read_to_string("/proc/1/cgroup").ok();
+    #[cfg(not(unix))]
+    let proc_1_cgroup: Option<String> = None;
+
     detect_container_environment_from(SandboxDetectionInputs {
         env_pairs: env::vars().collect(),
+        #[cfg(unix)]
         dockerenv_exists: Path::new("/.dockerenv").exists(),
+        #[cfg(not(unix))]
+        dockerenv_exists: false,
+        #[cfg(unix)]
         containerenv_exists: Path::new("/run/.containerenv").exists(),
+        #[cfg(not(unix))]
+        containerenv_exists: false,
         proc_1_cgroup: proc_1_cgroup.as_deref(),
     })
 }
@@ -194,6 +231,7 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
         requested: request.clone(),
         supported: namespace_supported,
         active,
+        verifiable_isolation: active || container.in_container,
         namespace_supported,
         namespace_active: request.enabled && request.namespace_restrictions && namespace_supported,
         network_supported,
@@ -277,6 +315,7 @@ fn normalize_mounts(mounts: &[String], cwd: &Path) -> Vec<String> {
         .collect()
 }
 
+#[cfg(unix)]
 fn command_exists(command: &str) -> bool {
     env::var_os("PATH")
         .is_some_and(|paths| env::split_paths(&paths).any(|path| path.join(command).exists()))
@@ -285,6 +324,9 @@ fn command_exists(command: &str) -> bool {
 /// Check whether `unshare --user` actually works on this system.
 /// On some CI environments (e.g. GitHub Actions), the binary exists but
 /// user namespaces are restricted, causing silent failures.
+/// This function is only compiled on Unix targets; a no-op stub returns `false`
+/// on all other platforms, ensuring zero dead-code warnings on Windows.
+#[cfg(unix)]
 fn unshare_user_namespace_works() -> bool {
     use std::sync::OnceLock;
     static RESULT: OnceLock<bool> = OnceLock::new();
@@ -301,6 +343,12 @@ fn unshare_user_namespace_works() -> bool {
             .map(|s| s.success())
             .unwrap_or(false)
     })
+}
+
+/// Non-Unix stub: namespace isolation is unavailable on Windows and macOS by default.
+#[cfg(not(unix))]
+fn unshare_user_namespace_works() -> bool {
+    false
 }
 
 #[cfg(test)]

@@ -5,6 +5,64 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ---
 
+## [3.0.0] — 2026-07-24
+
+### Security Architecture Migration (Phases 1–7, audit findings F01–F16)
+
+This release constitutes a security-sensitive architectural migration to a
+single Rust execution and security engine, with Python retained only as a
+thin, authenticated web/API adapter. All model routing, permissions, tool
+execution, sessions, memory, budgets, and audit semantics now have one
+authoritative Rust implementation.
+
+#### Phase 1 — Prompt Injection Hardening (G1)
+- `InjectionGuard` in Rust runtime enforces structured content-address
+  whitelisting and strips all `<SYSTEM>` / `<INST>` injection vectors.
+- Python `InjectionGuard` test suite (5 tests) exercises the boundary layer.
+
+#### Phase 2 — Sandboxing and Capability Policy (G2)
+- `SandboxConfig` / `SandboxStatus` unify filesystem isolation, namespace
+  restrictions, and network isolation under a typed, serializable contract.
+- `validate_execution_allowed()` fail-closed gate: write/shell tools require
+  active sandboxing or explicit `--unsafe-local-mode` flag.
+- `PolicyEngine` and `PermissionEnforcer` provide per-tool allow/deny rules
+  with configurable `CapabilitySet` hierarchy.
+
+#### Phase 3 — Token Budget and Session Integrity (G3)
+- `BudgetEnforcer` persists per-session spend in `WormLedger` with strict
+  configurable input/output ceilings and hard stop-loss.
+- `SessionIntegrityGuard` validates HMAC-signed session files; corrupt or
+  replayed sessions are rejected.
+- `TrustResolver` enforces multi-tier trust levels (none/low/standard/high/full).
+
+#### Phase 4 — Runtime Cancellation and Task Lifecycle (G4)
+- `TaskRegistry` and `TeamCronRegistry` provide cancellable background task
+  management with worker isolation and full lifecycle audit.
+- `WorkerBoot` integrates budget, sandbox, and trust validation.
+
+#### Phase 5 — Transactional AI-Assisted Code Modification (G5)
+- `StructuredPatch` / `PatchHunk` replace free-form overwrite tools with
+  typed, hash-validated, atomic line-range patch contracts.
+- Pre-apply SHA-256 content verification with workspace-escape detection.
+- `rollback_transaction` provides instant byte-for-byte workspace restoration.
+
+#### Phase 6 — Persistence, Memory, and Ledger Consolidation (G6)
+- `SessionStore` backed by SQLite WAL mode with ACID guarantees.
+- `WormLedger` cryptographic tamper-evident chain with `check_tamper_status()`.
+- `legacy_migration.rs` provides a one-shot importer from legacy JSON sessions.
+
+#### Phase 7 — Code Quality, CI, Packaging, and Documentation (G7)
+- Canonical version unified to `3.0.0` across Rust workspace (`Cargo.toml`),
+  Python package (`pyproject.toml`), and API status endpoint (`app.py`).
+- MIT `LICENSE` file added and machine-verified in `packaging_tests.rs`.
+- Platform conditional guards (`#[cfg(unix)]` / `#[cfg(not(unix))]`) added
+  to `sandbox.rs` for provably correct cross-platform compilation.
+- `cargo clippy --workspace --all-targets -- -D warnings` passes with zero
+  warnings; `cargo test --workspace` passes 100% of all test targets.
+
+---
+
+
 ## [0.14.0] — 2026-04-06
 
 ### Added — Phase 14

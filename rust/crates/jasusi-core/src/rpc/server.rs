@@ -8,8 +8,8 @@ use tonic::{Request, Response, Status};
 use super::proto::jasus_core_service_server::{JasusCoreService, JasusCoreServiceServer};
 use super::proto::{
     Empty, LedgerEntry, LedgerQuery, LedgerStatus, MemoryEntry, MemoryQuery, MemoryResponse,
-    RollbackRequest, RollbackResult, SessionKey, SessionState, SessionUpdate, ToolEvent, ToolOutput,
-    ToolRequest, UpsertResult,
+    RollbackRequest, RollbackResult, SessionKey, SessionState, SessionUpdate, ToolEvent,
+    ToolOutput, ToolRequest, UpsertResult,
 };
 
 pub struct SocketGuard {
@@ -41,41 +41,40 @@ pub struct JasusCoreServiceImpl;
 impl JasusCoreService for JasusCoreServiceImpl {
     type ExecuteToolStream = StreamPin<ToolEvent>;
 
-    async fn execute_tool(&self, _request: Request<ToolRequest>) -> GrpcResult<Self::ExecuteToolStream> {
-        let (tx, rx) = mpsc::channel(1);
-        tokio::spawn(async move {
-            let event = ToolEvent {
-                event: Some(super::proto::tool_event::Event::Output(ToolOutput {
-                    content: "stub".into(),
-                    is_error: false,
-                })),
-            };
-            let _ = tx.send(Ok(event)).await;
-        });
-        let stream = ReceiverStream::new(rx);
-        Ok(Response::new(Box::pin(stream)))
+    async fn execute_tool(
+        &self,
+        _request: Request<ToolRequest>,
+    ) -> GrpcResult<Self::ExecuteToolStream> {
+        Err(Status::unimplemented(
+            "execute_tool is not implemented in RPC service yet",
+        ))
     }
 
     async fn upsert_memory(&self, _request: Request<MemoryEntry>) -> GrpcResult<UpsertResult> {
-        Ok(Response::new(UpsertResult { success: true }))
+        Err(Status::unimplemented(
+            "upsert_memory is not implemented in RPC service yet",
+        ))
     }
 
     async fn query_memory(&self, _request: Request<MemoryQuery>) -> GrpcResult<MemoryResponse> {
-        Ok(Response::new(MemoryResponse { results: vec![] }))
+        Err(Status::unimplemented(
+            "query_memory is not implemented in RPC service yet",
+        ))
     }
 
-    async fn rollback_memory(&self, _request: Request<RollbackRequest>) -> GrpcResult<RollbackResult> {
-        Ok(Response::new(RollbackResult {
-            removed_count: 0,
-            ledger_seq: 0,
-        }))
+    async fn rollback_memory(
+        &self,
+        _request: Request<RollbackRequest>,
+    ) -> GrpcResult<RollbackResult> {
+        Err(Status::unimplemented(
+            "rollback_memory is not implemented in RPC service yet",
+        ))
     }
 
     async fn verify_ledger(&self, _request: Request<Empty>) -> GrpcResult<LedgerStatus> {
-        Ok(Response::new(LedgerStatus {
-            verified: true,
-            tampered_at_seq: None,
-        }))
+        Err(Status::unimplemented(
+            "verify_ledger is not implemented in RPC service yet",
+        ))
     }
 
     type GetLedgerEntriesStream = StreamPin<LedgerEntry>;
@@ -84,23 +83,21 @@ impl JasusCoreService for JasusCoreServiceImpl {
         &self,
         _request: Request<LedgerQuery>,
     ) -> GrpcResult<Self::GetLedgerEntriesStream> {
-        let (_tx, rx) = mpsc::channel(1);
-        let stream = ReceiverStream::new(rx);
-        Ok(Response::new(Box::pin(stream)))
+        Err(Status::unimplemented(
+            "get_ledger_entries is not implemented in RPC service yet",
+        ))
     }
 
     async fn get_session_state(&self, _request: Request<SessionKey>) -> GrpcResult<SessionState> {
-        Ok(Response::new(SessionState {
-            session_id: String::new(),
-            input_tokens: 0,
-            output_tokens: 0,
-            compaction_count: 0,
-            updated_at: String::new(),
-        }))
+        Err(Status::unimplemented(
+            "get_session_state is not implemented in RPC service yet",
+        ))
     }
 
     async fn update_session(&self, _request: Request<SessionUpdate>) -> GrpcResult<Empty> {
-        Ok(Response::new(Empty {}))
+        Err(Status::unimplemented(
+            "update_session is not implemented in RPC service yet",
+        ))
     }
 }
 

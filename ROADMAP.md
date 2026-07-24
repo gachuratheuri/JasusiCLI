@@ -1,6 +1,11 @@
 # ROADMAP.md
 
+> [!IMPORTANT]
+> **PHASE 0 GOVERNANCE & SECURITY FEATURE FREEZE ACTIVE**:
+> New feature work affecting runtime, permissions, memory, routing, or protocols is **FROZEN** under Phase 0 Governance until Phase 1–8 security and architectural migration milestones pass (Exit Gates G0–G8). All active work must prioritize architectural consolidation and security remediation outlined in [ADR-001](file:///c:/Users/david/jasusicli-v3/docs/architecture/adr-001-rust-engine-python-adapter.md) and [Findings Traceability](file:///c:/Users/david/jasusicli-v3/docs/security/findings_traceability.md).
+
 # Clawable Coding Harness Roadmap
+
 
 ## Goal
 

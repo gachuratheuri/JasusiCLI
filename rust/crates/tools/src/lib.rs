@@ -17,7 +17,6 @@ use runtime::{
     permission_enforcer::{EnforcementResult, PermissionEnforcer},
     read_file,
     summary_compression::compress_summary_text,
-    TaskPacket,
     task_registry::TaskRegistry,
     team_cron_registry::{CronRegistry, TeamRegistry},
     worker_boot::{WorkerReadySnapshot, WorkerRegistry},
@@ -25,7 +24,7 @@ use runtime::{
     BranchFreshness, ContentBlock, ConversationMessage, ConversationRuntime, GrepSearchInput,
     LaneEvent, LaneEventBlocker, LaneEventName, LaneEventStatus, LaneFailureClass,
     McpDegradedReport, MessageRole, PermissionMode, PermissionPolicy, PromptCacheEvent,
-    RuntimeError, Session, ToolError, ToolExecutor,
+    RuntimeError, Session, TaskPacket, ToolError, ToolExecutor,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1705,7 +1704,7 @@ fn run_remote_trigger(input: RemoteTriggerInput) -> Result<String, String> {
                 "method": method,
                 "status_code": status,
                 "body": truncated_body,
-                "success": status >= 200 && status < 300
+                "success": (200..300).contains(&status)
             }))
         }
         Err(e) => to_pretty_json(json!({
@@ -1878,27 +1877,25 @@ fn branch_divergence_output(
         dangerously_disable_sandbox: None,
         return_code_interpretation: Some("preflight_blocked:branch_divergence".to_string()),
         no_output_expected: Some(false),
-        structured_content: Some(vec![
-            serde_json::to_value(
-                LaneEvent::new(
-                    LaneEventName::BranchStaleAgainstMain,
-                    LaneEventStatus::Blocked,
-                    iso8601_now(),
-                )
-                    .with_failure_class(LaneFailureClass::BranchDivergence)
-                    .with_detail(stderr.clone())
-                    .with_data(json!({
-                        "branch": branch,
-                        "mainRef": main_ref,
-                        "commitsBehind": commits_behind,
-                        "commitsAhead": commits_ahead,
-                        "missingCommits": missing_fixes,
-                        "blockedCommand": command,
-                        "recommendedAction": format!("merge or rebase {main_ref} before workspace tests")
-                    })),
+        structured_content: Some(vec![serde_json::to_value(
+            LaneEvent::new(
+                LaneEventName::BranchStaleAgainstMain,
+                LaneEventStatus::Blocked,
+                iso8601_now(),
             )
-            .expect("lane event should serialize"),
-        ]),
+            .with_failure_class(LaneFailureClass::BranchDivergence)
+            .with_detail(stderr.clone())
+            .with_data(json!({
+                "branch": branch,
+                "mainRef": main_ref,
+                "commitsBehind": commits_behind,
+                "commitsAhead": commits_ahead,
+                "missingCommits": missing_fixes,
+                "blockedCommand": command,
+                "recommendedAction": format!("merge or rebase {main_ref} before workspace tests")
+            })),
+        )
+        .expect("lane event should serialize")]),
         persisted_output_path: None,
         persisted_output_size: None,
         sandbox_status: None,
@@ -3294,15 +3291,15 @@ fn persist_agent_terminal_state(
     let mut next_manifest = manifest.clone();
     next_manifest.status = status.to_string();
     next_manifest.completed_at = Some(iso8601_now());
-    next_manifest.current_blocker = blocker.clone();
+    next_manifest.current_blocker.clone_from(&blocker);
     next_manifest.error = error;
     if let Some(blocker) = blocker {
-        next_manifest.lane_events.push(
-            LaneEvent::blocked(iso8601_now(), &blocker),
-        );
-        next_manifest.lane_events.push(
-            LaneEvent::failed(iso8601_now(), &blocker),
-        );
+        next_manifest
+            .lane_events
+            .push(LaneEvent::blocked(iso8601_now(), &blocker));
+        next_manifest
+            .lane_events
+            .push(LaneEvent::failed(iso8601_now(), &blocker));
     } else {
         next_manifest.current_blocker = None;
         let compressed_detail = result
@@ -4736,12 +4733,24 @@ fn detect_powershell_shell() -> std::io::Result<&'static str> {
 }
 
 fn command_exists(command: &str) -> bool {
-    std::process::Command::new("sh")
-        .arg("-lc")
-        .arg(format!("command -v {command} >/dev/null 2>&1"))
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .arg("/C")
+            .arg(format!("where {command} >nul 2>&1"))
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("sh")
+            .arg("-lc")
+            .arg(format!("command -v {command} >/dev/null 2>&1"))
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -4952,8 +4961,8 @@ mod tests {
         agent_permission_policy, allowed_tools_for_subagent, classify_lane_failure,
         execute_agent_with_spawn, execute_tool, final_assistant_text, mvp_tool_specs,
         permission_mode_from_plugin, persist_agent_terminal_state, push_output_block,
-        run_task_packet, AgentInput, AgentJob, GlobalToolRegistry, LaneEventName,
-        LaneFailureClass, SubagentToolExecutor,
+        run_task_packet, AgentInput, AgentJob, GlobalToolRegistry, LaneEventName, LaneFailureClass,
+        SubagentToolExecutor,
     };
     use api::OutputContentBlock;
     use runtime::{
@@ -5649,7 +5658,9 @@ mod tests {
 
     #[test]
     fn skill_loads_local_skill_prompt() {
-        let _guard = env_lock().lock().expect("env lock should acquire");
+        let _guard = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let home = temp_path("skills-home");
         let skill_dir = home.join(".agents").join("skills").join("help");
         fs::create_dir_all(&skill_dir).expect("skill dir should exist");
@@ -5672,10 +5683,8 @@ mod tests {
 
         let output: serde_json::Value = serde_json::from_str(&result).expect("valid json");
         assert_eq!(output["skill"], "help");
-        assert!(output["path"]
-            .as_str()
-            .expect("path")
-            .ends_with("/help/SKILL.md"));
+        let path_str = output["path"].as_str().expect("path").replace('\\', "/");
+        assert!(path_str.ends_with("/help/SKILL.md"));
         assert!(output["prompt"]
             .as_str()
             .expect("prompt")
@@ -5691,10 +5700,11 @@ mod tests {
         let dollar_output: serde_json::Value =
             serde_json::from_str(&dollar_result).expect("valid json");
         assert_eq!(dollar_output["skill"], "$help");
-        assert!(dollar_output["path"]
+        let dollar_path_str = dollar_output["path"]
             .as_str()
             .expect("path")
-            .ends_with("/help/SKILL.md"));
+            .replace('\\', "/");
+        assert!(dollar_path_str.ends_with("/help/SKILL.md"));
 
         if let Some(home) = original_home {
             std::env::set_var("HOME", home);
@@ -5820,6 +5830,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn agent_fake_runner_can_persist_completion_and_failure() {
         let _guard = env_lock()
             .lock()
@@ -5977,7 +5988,10 @@ mod tests {
                 "gateway routing rejected the request",
                 LaneFailureClass::GatewayRouting,
             ),
-            ("tool failed: denied tool execution from hook", LaneFailureClass::ToolRuntime),
+            (
+                "tool failed: denied tool execution from hook",
+                LaneFailureClass::ToolRuntime,
+            ),
             ("thread creation failed", LaneFailureClass::Infra),
         ];
 
@@ -6000,11 +6014,17 @@ mod tests {
             (LaneEventName::MergeReady, "lane.merge.ready"),
             (LaneEventName::Finished, "lane.finished"),
             (LaneEventName::Failed, "lane.failed"),
-            (LaneEventName::BranchStaleAgainstMain, "branch.stale_against_main"),
+            (
+                LaneEventName::BranchStaleAgainstMain,
+                "branch.stale_against_main",
+            ),
         ];
 
         for (event, expected) in cases {
-            assert_eq!(serde_json::to_value(event).expect("serialize lane event"), json!(expected));
+            assert_eq!(
+                serde_json::to_value(event).expect("serialize lane event"),
+                json!(expected)
+            );
         }
     }
 
@@ -6254,13 +6274,18 @@ mod tests {
 
     #[test]
     fn bash_tool_reports_success_exit_failure_timeout_and_background() {
-        let success = execute_tool("bash", &json!({ "command": "printf 'hello'" }))
-            .expect("bash should succeed");
+        let (cmd, fail_cmd) = if cfg!(windows) {
+            ("echo hello", "echo oops 1>&2 & exit /b 7")
+        } else {
+            ("printf 'hello'", "printf 'oops' >&2; exit 7")
+        };
+        let success =
+            execute_tool("bash", &json!({ "command": cmd })).expect("bash should succeed");
         let success_output: serde_json::Value = serde_json::from_str(&success).expect("json");
-        assert_eq!(success_output["stdout"], "hello");
+        assert_eq!(success_output["stdout"].as_str().unwrap().trim(), "hello");
         assert_eq!(success_output["interrupted"], false);
 
-        let failure = execute_tool("bash", &json!({ "command": "printf 'oops' >&2; exit 7" }))
+        let failure = execute_tool("bash", &json!({ "command": fail_cmd }))
             .expect("bash failure should still return structured output");
         let failure_output: serde_json::Value = serde_json::from_str(&failure).expect("json");
         assert_eq!(failure_output["returnCodeInterpretation"], "exit_code:7");
@@ -6505,10 +6530,11 @@ mod tests {
             .expect("glob should succeed");
         let globbed_output: serde_json::Value = serde_json::from_str(&globbed).expect("json");
         assert_eq!(globbed_output["numFiles"], 1);
-        assert!(globbed_output["filenames"][0]
+        let first_file = globbed_output["filenames"][0]
             .as_str()
             .expect("filename")
-            .ends_with("nested/lib.rs"));
+            .replace('\\', "/");
+        assert!(first_file.ends_with("nested/lib.rs"));
 
         let glob_error = execute_tool("glob_search", &json!({ "pattern": "[" }))
             .expect_err("invalid glob should fail");
@@ -6876,6 +6902,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn powershell_runs_via_stub_shell() {
         let _guard = env_lock()
             .lock()
@@ -7044,11 +7071,16 @@ printf 'pwsh:%s' "$1"
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let registry = super::GlobalToolRegistry::builtin();
+        let cmd = if cfg!(windows) {
+            "echo ok"
+        } else {
+            "printf 'ok'"
+        };
         let result = registry
-            .execute("bash", &json!({ "command": "printf 'ok'" }))
+            .execute("bash", &json!({ "command": cmd }))
             .expect("bash should succeed without enforcer");
         let output: serde_json::Value = serde_json::from_str(&result).expect("json");
-        assert_eq!(output["stdout"], "ok");
+        assert_eq!(output["stdout"].as_str().unwrap().trim(), "ok");
     }
 
     #[test]

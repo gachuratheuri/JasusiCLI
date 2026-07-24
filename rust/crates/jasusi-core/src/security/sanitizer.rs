@@ -9,10 +9,8 @@ fn get_patterns() -> &'static Vec<Regex> {
             Regex::new(r"sk-ant-[A-Za-z0-9\-_]{20,}").unwrap(),
             Regex::new(r"AIza[A-Za-z0-9\-_]{35}").unwrap(),
             Regex::new(r"gsk_[A-Za-z0-9]{50,}").unwrap(),
-            Regex::new(
-                r"(?i)(GROQ|ANTHROPIC|OPENAI|GEMINI|DEEPSEEK)_[A-Z_]*KEY[=:]\s*[^\s]{8,}",
-            )
-            .unwrap(),
+            Regex::new(r"(?i)(GROQ|ANTHROPIC|OPENAI|GEMINI|DEEPSEEK)_[A-Z_]*KEY[=:]\s*[^\s]{8,}")
+                .unwrap(),
             Regex::new(r"eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+").unwrap(),
             Regex::new(r"(?i)bearer\s+[A-Za-z0-9\-_\.]{20,}").unwrap(),
             Regex::new(r"(?i)token[=:]\s*[a-f0-9]{40,}").unwrap(),

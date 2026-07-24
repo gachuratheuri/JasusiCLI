@@ -15,6 +15,12 @@ impl std::fmt::Display for LedgerError {
 
 impl std::error::Error for LedgerError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TamperStatus {
+    Clean,
+    Tampered { corrupted_sequence: u64 },
+}
+
 pub struct WormLedger {
     conn: Arc<Mutex<Connection>>,
     db_path: PathBuf,
@@ -112,8 +118,8 @@ impl WormLedger {
         )
         .map_err(|e| LedgerError(e.to_string()))?;
 
-        let seq = u64::try_from(conn.last_insert_rowid())
-            .map_err(|e| LedgerError(e.to_string()))?;
+        let seq =
+            u64::try_from(conn.last_insert_rowid()).map_err(|e| LedgerError(e.to_string()))?;
         Ok(seq)
     }
 
@@ -138,9 +144,8 @@ impl WormLedger {
             let detail: String = row.get(5).map_err(|e| LedgerError(e.to_string()))?;
             let stored_hash: String = row.get(6).map_err(|e| LedgerError(e.to_string()))?;
 
-            let chain_input = format!(
-                "{prev_hash}:{session_id}:{event_type}:{actor}:{input_hash}:{detail}"
-            );
+            let chain_input =
+                format!("{prev_hash}:{session_id}:{event_type}:{actor}:{input_hash}:{detail}");
             let mut hasher = Sha256::new();
             hasher.update(chain_input.as_bytes());
             let expected_hash = hex::encode(hasher.finalize());
@@ -151,6 +156,13 @@ impl WormLedger {
             prev_hash = stored_hash;
         }
         Ok(None)
+    }
+
+    pub fn check_tamper_status(&self) -> Result<TamperStatus, LedgerError> {
+        match self.verify_chain()? {
+            None => Ok(TamperStatus::Clean),
+            Some(corrupted_sequence) => Ok(TamperStatus::Tampered { corrupted_sequence }),
+        }
     }
 
     pub fn get_entries(
@@ -244,7 +256,7 @@ mod tests {
 
     fn temp_ledger() -> WormLedger {
         let dir = tempdir().unwrap();
-        let path = dir.into_path().join("test_audit.db");
+        let path = dir.path().join("test_audit.db");
         WormLedger::open(path).unwrap()
     }
 

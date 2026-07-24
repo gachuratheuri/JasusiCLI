@@ -785,10 +785,18 @@ mod tests {
 
     #[test]
     fn parses_pre_hook_permission_override_and_updated_input() {
+        let script_path = std::env::temp_dir().join("pre-hook-test.py");
+        std::fs::write(
+            &script_path,
+            r#"import sys
+sys.stdout.write('{"systemMessage":"updated","hookSpecificOutput":{"permissionDecision":"allow","permissionDecisionReason":"hook ok","updatedInput":{"command":"git status"}}}')
+"#,
+        )
+        .expect("write test script");
+        let py_cmd = if cfg!(windows) { "python" } else { "python3" };
+        let cmd_str = format!("{py_cmd} -u {}", script_path.display());
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![shell_snippet(
-                r#"printf '%s' '{"systemMessage":"updated","hookSpecificOutput":{"permissionDecision":"allow","permissionDecisionReason":"hook ok","updatedInput":{"command":"git status"}}}'"#,
-            )],
+            vec![cmd_str],
             Vec::new(),
             Vec::new(),
         ));
@@ -877,13 +885,15 @@ mod tests {
             HookRunResult::allow(vec!["first".to_string(), "second".to_string()])
         );
         assert_eq!(reporter.events.len(), 4);
+        let snippet_first = shell_snippet("printf 'first'");
+        let snippet_second = shell_snippet("printf 'second'");
         assert!(matches!(
             &reporter.events[0],
             HookProgressEvent::Started {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'first'"
+            } if command == &snippet_first
         ));
         assert!(matches!(
             &reporter.events[1],
@@ -891,7 +901,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'first'"
+            } if command == &snippet_first
         ));
         assert!(matches!(
             &reporter.events[2],
@@ -899,7 +909,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'second'"
+            } if command == &snippet_second
         ));
         assert!(matches!(
             &reporter.events[3],
@@ -907,7 +917,7 @@ mod tests {
                 event: HookEvent::PreToolUse,
                 command,
                 ..
-            } if command == "printf 'second'"
+            } if command == &snippet_second
         ));
     }
 
@@ -937,8 +947,13 @@ mod tests {
 
     #[test]
     fn abort_signal_cancels_long_running_hook_and_reports_progress() {
+        let sleep_cmd = if cfg!(windows) {
+            "ping 127.0.0.1 -n 6 > nul".to_string()
+        } else {
+            shell_snippet("sleep 5")
+        };
         let runner = HookRunner::new(RuntimeHookConfig::new(
-            vec![shell_snippet("sleep 5")],
+            vec![sleep_cmd],
             Vec::new(),
             Vec::new(),
         ));
@@ -977,7 +992,19 @@ mod tests {
 
     #[cfg(windows)]
     fn shell_snippet(script: &str) -> String {
-        script.replace('\'', "\"")
+        let s = script.to_string();
+        if s.starts_with("printf ") {
+            let msg = s
+                .trim_start_matches("printf ")
+                .trim_matches('\'')
+                .trim_matches('"');
+            if let Some((text, exit_code)) = msg.split_once("; exit ") {
+                let text_clean = text.trim_matches('\'').trim_matches('"');
+                return format!("echo {text_clean} & exit /b {exit_code}");
+            }
+            return format!("echo {msg}");
+        }
+        s.replace('\'', "\"")
     }
 
     #[cfg(not(windows))]

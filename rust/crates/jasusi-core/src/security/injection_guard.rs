@@ -30,7 +30,10 @@ pub fn clean(input: &str) -> InjectionGuardResult {
         let is_injection = INJECTION_PATTERNS.iter().any(|p| trimmed.starts_with(p));
         if is_injection {
             stripped_count += 1;
-            tracing::warn!(pattern = trimmed, "Injection pattern stripped from instruction file");
+            tracing::warn!(
+                pattern = trimmed,
+                "Injection pattern stripped from instruction file"
+            );
         } else {
             cleaned_lines.push(line);
         }

@@ -117,6 +117,7 @@ pub struct WorkerEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Worker {
     pub worker_id: String,
     pub cwd: String,
@@ -198,6 +199,7 @@ impl WorkerRegistry {
         inner.workers.get(worker_id).cloned()
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn observe(&self, worker_id: &str, screen_text: &str) -> Result<Worker, String> {
         let mut inner = self.inner.lock().expect("worker registry lock poisoned");
         let worker = inner
@@ -257,7 +259,9 @@ impl WorkerRegistry {
             let prompt_preview = prompt_preview(worker.last_prompt.as_deref().unwrap_or_default());
             let message = match observation.target {
                 WorkerPromptTarget::Shell => {
-                    format!("worker prompt landed in shell instead of coding agent: {prompt_preview}")
+                    format!(
+                        "worker prompt landed in shell instead of coding agent: {prompt_preview}"
+                    )
                 }
                 WorkerPromptTarget::WrongTarget => format!(
                     "worker prompt landed in the wrong target instead of {}: {}",
@@ -312,7 +316,9 @@ impl WorkerRegistry {
             worker.last_error = None;
         }
 
-        if detect_ready_for_prompt(screen_text, &lowered) && worker.status != WorkerStatus::ReadyForPrompt {
+        if detect_ready_for_prompt(screen_text, &lowered)
+            && worker.status != WorkerStatus::ReadyForPrompt
+        {
             worker.status = WorkerStatus::ReadyForPrompt;
             worker.prompt_in_flight = false;
             if matches!(
@@ -412,7 +418,10 @@ impl WorkerRegistry {
             worker_id: worker.worker_id.clone(),
             status: worker.status,
             ready: worker.status == WorkerStatus::ReadyForPrompt,
-            blocked: matches!(worker.status, WorkerStatus::TrustRequired | WorkerStatus::Failed),
+            blocked: matches!(
+                worker.status,
+                WorkerStatus::TrustRequired | WorkerStatus::Failed
+            ),
             replay_prompt_ready: worker.replay_prompt.is_some(),
             last_error: worker.last_error.clone(),
         })
@@ -641,9 +650,7 @@ fn detect_prompt_misdelivery(
     prompt: Option<&str>,
     expected_cwd: &str,
 ) -> Option<PromptDeliveryObservation> {
-    let Some(prompt) = prompt else {
-        return None;
-    };
+    let prompt = prompt?;
 
     let prompt_snippet = prompt
         .lines()
@@ -702,7 +709,7 @@ fn detect_observed_shell_cwd(screen_text: &str) -> Option<String> {
         let tokens = line.split_whitespace().collect::<Vec<_>>();
         tokens
             .iter()
-            .position(|token| is_shell_prompt_token(token))
+            .position(is_shell_prompt_token)
             .and_then(|index| index.checked_sub(1).map(|cwd_index| tokens[cwd_index]))
             .filter(|candidate| looks_like_cwd_label(candidate))
             .map(ToOwned::to_owned)
@@ -722,14 +729,14 @@ fn looks_like_cwd_label(candidate: &str) -> bool {
 
 fn cwd_matches_observed_target(expected_cwd: &str, observed_cwd: &str) -> bool {
     let expected = normalize_path(expected_cwd);
-    let expected_base = expected
-        .file_name()
-        .map(|segment| segment.to_string_lossy().into_owned())
-        .unwrap_or_else(|| expected.to_string_lossy().into_owned());
-    let observed_base = Path::new(observed_cwd)
-        .file_name()
-        .map(|segment| segment.to_string_lossy().into_owned())
-        .unwrap_or_else(|| observed_cwd.trim_matches(':').to_string());
+    let expected_base = expected.file_name().map_or_else(
+        || expected.to_string_lossy().into_owned(),
+        |segment| segment.to_string_lossy().into_owned(),
+    );
+    let observed_base = Path::new(observed_cwd).file_name().map_or_else(
+        || observed_cwd.trim_matches(':').to_string(),
+        |segment| segment.to_string_lossy().into_owned(),
+    );
 
     expected.to_string_lossy().ends_with(observed_cwd)
         || observed_cwd.ends_with(expected.to_string_lossy().as_ref())

@@ -2271,18 +2271,22 @@ mod tests {
     }
 
     fn write_external_plugin(root: &Path, name: &str, version: &str) {
-        write_file(
-            root.join("hooks").join("pre.sh").as_path(),
-            "#!/bin/sh\nprintf 'pre'\n",
-        );
-        write_file(
-            root.join("hooks").join("post.sh").as_path(),
-            "#!/bin/sh\nprintf 'post'\n",
-        );
+        let (pre_name, pre_content) = if cfg!(windows) {
+            ("pre.bat", "@echo pre\n")
+        } else {
+            ("pre.sh", "#!/bin/sh\nprintf 'pre'\n")
+        };
+        let (post_name, post_content) = if cfg!(windows) {
+            ("post.bat", "@echo post\n")
+        } else {
+            ("post.sh", "#!/bin/sh\nprintf 'post'\n")
+        };
+        write_file(root.join("hooks").join(pre_name).as_path(), pre_content);
+        write_file(root.join("hooks").join(post_name).as_path(), post_content);
         write_file(
             root.join(MANIFEST_RELATIVE_PATH).as_path(),
             format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"test plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/pre.sh\"],\n    \"PostToolUse\": [\"./hooks/post.sh\"]\n  }}\n}}"
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"test plugin\",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/{pre_name}\"],\n    \"PostToolUse\": [\"./hooks/{post_name}\"]\n  }}\n}}"
             )
             .as_str(),
         );
@@ -2324,18 +2328,31 @@ mod tests {
 
     fn write_lifecycle_plugin(root: &Path, name: &str, version: &str) -> PathBuf {
         let log_path = root.join("lifecycle.log");
+        let (init_name, init_content) = if cfg!(windows) {
+            ("init.bat", "@echo init>> lifecycle.log\n")
+        } else {
+            ("init.sh", "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n")
+        };
+        let (shut_name, shut_content) = if cfg!(windows) {
+            ("shutdown.bat", "@echo shutdown>> lifecycle.log\n")
+        } else {
+            (
+                "shutdown.sh",
+                "#!/bin/sh\nprintf 'shutdown\\n' >> lifecycle.log\n",
+            )
+        };
         write_file(
-            root.join("lifecycle").join("init.sh").as_path(),
-            "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n",
+            root.join("lifecycle").join(init_name).as_path(),
+            init_content,
         );
         write_file(
-            root.join("lifecycle").join("shutdown.sh").as_path(),
-            "#!/bin/sh\nprintf 'shutdown\\n' >> lifecycle.log\n",
+            root.join("lifecycle").join(shut_name).as_path(),
+            shut_content,
         );
         write_file(
             root.join(MANIFEST_RELATIVE_PATH).as_path(),
             format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"lifecycle plugin\",\n  \"lifecycle\": {{\n    \"Init\": [\"./lifecycle/init.sh\"],\n    \"Shutdown\": [\"./lifecycle/shutdown.sh\"]\n  }}\n}}"
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"lifecycle plugin\",\n  \"lifecycle\": {{\n    \"Init\": [\"./lifecycle/{init_name}\"],\n    \"Shutdown\": [\"./lifecycle/{shut_name}\"]\n  }}\n}}"
             )
             .as_str(),
         );
@@ -2347,11 +2364,19 @@ mod tests {
     }
 
     fn write_tool_plugin_with_name(root: &Path, name: &str, version: &str, tool_name: &str) {
-        let script_path = root.join("tools").join("echo-json.sh");
-        write_file(
-            &script_path,
-            "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CLAWD_PLUGIN_ID\" \"$CLAWD_TOOL_NAME\" \"$INPUT\"\n",
-        );
+        let (script_name, script_content) = if cfg!(windows) {
+            (
+                "echo-json.bat",
+                "@echo off\nset /p INPUT=\necho {\"plugin\":\"%CLAWD_PLUGIN_ID%\",\"tool\":\"%CLAWD_TOOL_NAME%\",\"input\":%INPUT%}\n",
+            )
+        } else {
+            (
+                "echo-json.sh",
+                "#!/bin/sh\nINPUT=$(cat)\nprintf '{\"plugin\":\"%s\",\"tool\":\"%s\",\"input\":%s}\\n' \"$CLAWD_PLUGIN_ID\" \"$CLAWD_TOOL_NAME\" \"$INPUT\"\n",
+            )
+        };
+        let script_path = root.join("tools").join(script_name);
+        write_file(&script_path, script_content);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -2363,7 +2388,7 @@ mod tests {
         write_file(
             root.join(MANIFEST_RELATIVE_PATH).as_path(),
             format!(
-                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"tool plugin\",\n  \"tools\": [\n    {{\n      \"name\": \"{tool_name}\",\n      \"description\": \"Echo JSON input\",\n      \"inputSchema\": {{\"type\": \"object\", \"properties\": {{\"message\": {{\"type\": \"string\"}}}}, \"required\": [\"message\"], \"additionalProperties\": false}},\n      \"command\": \"./tools/echo-json.sh\",\n      \"requiredPermission\": \"workspace-write\"\n    }}\n  ]\n}}"
+                "{{\n  \"name\": \"{name}\",\n  \"version\": \"{version}\",\n  \"description\": \"tool plugin\",\n  \"tools\": [\n    {{\n      \"name\": \"{tool_name}\",\n      \"description\": \"Echo JSON input\",\n      \"inputSchema\": {{\"type\": \"object\", \"properties\": {{\"message\": {{\"type\": \"string\"}}}}, \"required\": [\"message\"], \"additionalProperties\": false}},\n      \"command\": \"./tools/{script_name}\",\n      \"requiredPermission\": \"workspace-write\"\n    }}\n  ]\n}}"
             )
             .as_str(),
         );
@@ -2771,7 +2796,9 @@ mod tests {
 
         let hooks = manager.aggregated_hooks().expect("hooks should aggregate");
         assert_eq!(hooks.pre_tool_use.len(), 1);
-        assert!(hooks.pre_tool_use[0].contains("pre.sh"));
+        assert!(
+            hooks.pre_tool_use[0].contains("pre.sh") || hooks.pre_tool_use[0].contains("pre.bat")
+        );
 
         manager
             .disable("demo@external")
@@ -3262,7 +3289,9 @@ mod tests {
         registry.initialize().expect("init should succeed");
         registry.shutdown().expect("shutdown should succeed");
 
-        let log = fs::read_to_string(&log_path).expect("lifecycle log should exist");
+        let log = fs::read_to_string(&log_path)
+            .expect("lifecycle log should exist")
+            .replace("\r\n", "\n");
         assert_eq!(log, "init\nshutdown\n");
 
         let _ = fs::remove_dir_all(config_home);

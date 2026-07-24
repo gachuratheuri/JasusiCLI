@@ -43,6 +43,10 @@ class TerminalPrompter:
     """Interactive terminal prompt — asks the user Y/n."""
 
     def ask(self, tool_name: str, command_preview: str) -> bool:
+        import sys
+        if not sys.stdin.isatty():
+            logger.warning("Non-interactive mode: Prompting denied automatically for tool=%s", tool_name)
+            return False
         try:
             answer = input(
                 f"\n[jasusi] Allow tool '{tool_name}'?\n"

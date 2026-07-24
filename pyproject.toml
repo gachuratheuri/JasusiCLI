@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "jasusi-cli"
-version = "0.14.0"
+version = "3.0.0"
 description = "JasusiCLI — multi-provider AI agent for the terminal"
 readme = "README.md"
 requires-python = ">=3.11"

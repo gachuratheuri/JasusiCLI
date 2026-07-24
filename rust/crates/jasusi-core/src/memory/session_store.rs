@@ -98,8 +98,7 @@ impl SessionStore {
         let final_path = Self::index_path(base_dir);
         let tmp_path = base_dir.join("sessions.json.tmp");
 
-        let data =
-            serde_json::to_string_pretty(index).map_err(|e| StoreError(e.to_string()))?;
+        let data = serde_json::to_string_pretty(index).map_err(|e| StoreError(e.to_string()))?;
 
         std::fs::write(&tmp_path, data.as_bytes()).map_err(|e| StoreError(e.to_string()))?;
 
@@ -211,8 +210,7 @@ impl SessionStore {
     }
 
     pub fn prune(&self, max_age_days: u32, max_entries: usize) -> Result<usize, StoreError> {
-        let cutoff =
-            chrono::Utc::now() - chrono::Duration::days(i64::from(max_age_days));
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(i64::from(max_age_days));
         let cutoff_str = cutoff.to_rfc3339();
 
         let mut index = self.index.lock().map_err(|e| StoreError(e.to_string()))?;
@@ -244,6 +242,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[allow(deprecated)]
     fn temp_store() -> SessionStore {
         let dir = tempdir().unwrap().into_path();
         SessionStore::open(dir).unwrap()
@@ -260,7 +259,8 @@ mod tests {
 
     #[test]
     fn test_sessions_json_is_written_atomically() {
-        let dir = tempdir().unwrap().into_path();
+        let temp = tempdir().unwrap();
+        let dir = temp.path().to_path_buf();
         let store = SessionStore::open(dir.clone()).unwrap();
         store.create_session("atomic-test", "proj").unwrap();
         let path = dir.join("sessions.json");
@@ -331,9 +331,7 @@ mod tests {
     fn test_prune_by_max_entries() {
         let store = temp_store();
         for i in 0..10 {
-            store
-                .create_session(&format!("s{i}"), "proj")
-                .unwrap();
+            store.create_session(format!("s{i}"), "proj").unwrap();
         }
         let pruned = store.prune(365, 5).unwrap();
         assert_eq!(pruned, 5);

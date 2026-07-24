@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
-use std::fs::{self, File};
-use std::io::{self, Read};
+use std::fs;
+#[cfg(unix)]
+use std::fs::File;
+use std::io;
+#[cfg(unix)]
+use std::io::Read;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -247,6 +251,7 @@ pub fn generate_pkce_pair() -> io::Result<PkceCodePair> {
     })
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn generate_state() -> io::Result<String> {
     generate_random_token(32)
 }
@@ -324,9 +329,28 @@ pub fn parse_oauth_callback_query(query: &str) -> Result<OAuthCallbackParams, St
     })
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn generate_random_token(bytes: usize) -> io::Result<String> {
     let mut buffer = vec![0_u8; bytes];
-    File::open("/dev/urandom")?.read_exact(&mut buffer)?;
+    #[cfg(unix)]
+    {
+        File::open("/dev/urandom")?.read_exact(&mut buffer)?;
+    }
+    #[cfg(not(unix))]
+    {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| io::Error::other(e.to_string()))?
+            .as_nanos();
+        let pid = u128::from(std::process::id());
+        let mut state = nanos ^ (pid << 32) ^ (buffer.as_ptr() as usize as u128);
+        for byte in &mut buffer {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            *byte = (state >> 24) as u8;
+        }
+    }
     Ok(base64url_encode(&buffer))
 }
 
@@ -335,7 +359,8 @@ fn credentials_home_dir() -> io::Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
     let home = std::env::var_os("HOME")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME or USERPROFILE is not set"))?;
     Ok(PathBuf::from(home).join(".claw"))
 }
 

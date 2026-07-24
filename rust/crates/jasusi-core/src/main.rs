@@ -109,18 +109,37 @@ async fn main() {
         .json()
         .init();
 
-    let jasusi_dir = dirs_path();
-    if let Err(e) = fs::create_dir_all(&jasusi_dir) {
-        tracing::error!(path = %jasusi_dir.display(), error = %e, "failed to create ~/.jasusi");
-    }
-    let pid_path = jasusi_dir.join("daemon.pid");
-    if let Err(e) = fs::write(&pid_path, std::process::id().to_string()) {
-        tracing::error!(path = %pid_path.display(), error = %e, "failed to write daemon.pid");
-    }
+    let args: Vec<String> = env::args().skip(1).collect();
+    let action = match parse_args(&args) {
+        Ok(act) => act,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
 
-    if let Err(e) = rpc::server::start_server().await {
-        tracing::error!(error = %e, "gRPC server exited with error");
-        std::process::exit(1);
+    match action {
+        CliAction::Daemon => {
+            let jasusi_dir = dirs_path();
+            if let Err(e) = fs::create_dir_all(&jasusi_dir) {
+                tracing::error!(path = %jasusi_dir.display(), error = %e, "failed to create ~/.jasusi");
+            }
+            let pid_path = jasusi_dir.join("daemon.pid");
+            if let Err(e) = fs::write(&pid_path, std::process::id().to_string()) {
+                tracing::error!(path = %pid_path.display(), error = %e, "failed to write daemon.pid");
+            }
+
+            if let Err(e) = rpc::server::start_server().await {
+                tracing::error!(error = %e, "gRPC server exited with error");
+                std::process::exit(1);
+            }
+        }
+        other => {
+            if let Err(e) = run_action(other) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -131,9 +150,9 @@ fn dirs_path() -> PathBuf {
     PathBuf::from(home).join(".jasusi")
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().skip(1).collect();
-    match parse_args(&args)? {
+fn run_action(action: CliAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        CliAction::Daemon => unreachable!(),
         CliAction::DumpManifests => dump_manifests(),
         CliAction::BootstrapPlan => print_bootstrap_plan(),
         CliAction::Agents { args } => LiveCli::print_agents(args.as_deref())?,
@@ -213,6 +232,7 @@ enum CliAction {
         allowed_tools: Option<AllowedToolSet>,
         permission_mode: PermissionMode,
     },
+    Daemon,
     // prompt-mode formatting is only supported for non-interactive runs
     Help,
 }
@@ -368,14 +388,14 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
     if rest.first().map(String::as_str) == Some("--resume") {
         return parse_resume_args(&rest[1..]);
     }
-    if let Some(action) = parse_single_word_command_alias(&rest, &model, permission_mode_override)
-    {
+    if let Some(action) = parse_single_word_command_alias(&rest, &model, permission_mode_override) {
         return action;
     }
 
     let permission_mode = permission_mode_override.unwrap_or_else(default_permission_mode);
 
     match rest[0].as_str() {
+        "daemon" | "serve" => Ok(CliAction::Daemon),
         "dump-manifests" => Ok(CliAction::DumpManifests),
         "bootstrap-plan" => Ok(CliAction::BootstrapPlan),
         "agents" => Ok(CliAction::Agents {
@@ -1778,37 +1798,38 @@ impl RuntimeMcpState {
             .into_iter()
             .filter(|server_name| !failed_server_names.contains(server_name))
             .collect::<Vec<_>>();
-        let failed_servers = discovery
-            .failed_servers
-            .iter()
-            .map(|failure| runtime::McpFailedServer {
-                server_name: failure.server_name.clone(),
-                phase: runtime::McpLifecyclePhase::ToolDiscovery,
-                error: runtime::McpErrorSurface::new(
-                    runtime::McpLifecyclePhase::ToolDiscovery,
-                    Some(failure.server_name.clone()),
-                    failure.error.clone(),
-                    std::collections::BTreeMap::new(),
-                    true,
-                ),
-            })
-            .chain(discovery.unsupported_servers.iter().map(|server| {
-                runtime::McpFailedServer {
-                    server_name: server.server_name.clone(),
-                    phase: runtime::McpLifecyclePhase::ServerRegistration,
+        let failed_servers =
+            discovery
+                .failed_servers
+                .iter()
+                .map(|failure| runtime::McpFailedServer {
+                    server_name: failure.server_name.clone(),
+                    phase: runtime::McpLifecyclePhase::ToolDiscovery,
                     error: runtime::McpErrorSurface::new(
-                        runtime::McpLifecyclePhase::ServerRegistration,
-                        Some(server.server_name.clone()),
-                        server.reason.clone(),
-                        std::collections::BTreeMap::from([(
-                            "transport".to_string(),
-                            format!("{:?}", server.transport).to_ascii_lowercase(),
-                        )]),
-                        false,
+                        runtime::McpLifecyclePhase::ToolDiscovery,
+                        Some(failure.server_name.clone()),
+                        failure.error.clone(),
+                        std::collections::BTreeMap::new(),
+                        true,
                     ),
-                }
-            }))
-            .collect::<Vec<_>>();
+                })
+                .chain(discovery.unsupported_servers.iter().map(|server| {
+                    runtime::McpFailedServer {
+                        server_name: server.server_name.clone(),
+                        phase: runtime::McpLifecyclePhase::ServerRegistration,
+                        error: runtime::McpErrorSurface::new(
+                            runtime::McpLifecyclePhase::ServerRegistration,
+                            Some(server.server_name.clone()),
+                            server.reason.clone(),
+                            std::collections::BTreeMap::from([(
+                                "transport".to_string(),
+                                format!("{:?}", server.transport).to_ascii_lowercase(),
+                            )]),
+                            false,
+                        ),
+                    }
+                }))
+                .collect::<Vec<_>>();
         let degraded_report = (!failed_servers.is_empty()).then(|| {
             runtime::McpDegradedReport::new(
                 working_servers,
@@ -5768,37 +5789,51 @@ mod tests {
 
     fn write_plugin_fixture(root: &Path, name: &str, include_hooks: bool, include_lifecycle: bool) {
         fs::create_dir_all(root.join(".claude-plugin")).expect("manifest dir");
+        let (pre_name, pre_content) = if cfg!(windows) {
+            ("pre.bat", "@echo plugin pre hook\n")
+        } else {
+            ("pre.sh", "#!/bin/sh\nprintf 'plugin pre hook'\n")
+        };
         if include_hooks {
             fs::create_dir_all(root.join("hooks")).expect("hooks dir");
-            fs::write(
-                root.join("hooks").join("pre.sh"),
-                "#!/bin/sh\nprintf 'plugin pre hook'\n",
-            )
-            .expect("write hook");
+            fs::write(root.join("hooks").join(pre_name), pre_content).expect("write hook");
         }
-        if include_lifecycle {
-            fs::create_dir_all(root.join("lifecycle")).expect("lifecycle dir");
-            fs::write(
-                root.join("lifecycle").join("init.sh"),
-                "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n",
+
+        let (init_name, init_content, shut_name, shut_content) = if cfg!(windows) {
+            (
+                "init.bat",
+                "@echo init>> lifecycle.log\n",
+                "shutdown.bat",
+                "@echo shutdown>> lifecycle.log\n",
             )
-            .expect("write init lifecycle");
-            fs::write(
-                root.join("lifecycle").join("shutdown.sh"),
+        } else {
+            (
+                "init.sh",
+                "#!/bin/sh\nprintf 'init\\n' >> lifecycle.log\n",
+                "shutdown.sh",
                 "#!/bin/sh\nprintf 'shutdown\\n' >> lifecycle.log\n",
             )
-            .expect("write shutdown lifecycle");
+        };
+
+        if include_lifecycle {
+            fs::create_dir_all(root.join("lifecycle")).expect("lifecycle dir");
+            fs::write(root.join("lifecycle").join(init_name), init_content)
+                .expect("write init lifecycle");
+            fs::write(root.join("lifecycle").join(shut_name), shut_content)
+                .expect("write shutdown lifecycle");
         }
 
         let hooks = if include_hooks {
-            ",\n  \"hooks\": {\n    \"PreToolUse\": [\"./hooks/pre.sh\"]\n  }"
+            format!(",\n  \"hooks\": {{\n    \"PreToolUse\": [\"./hooks/{pre_name}\"]\n  }}")
         } else {
-            ""
+            String::new()
         };
         let lifecycle = if include_lifecycle {
-            ",\n  \"lifecycle\": {\n    \"Init\": [\"./lifecycle/init.sh\"],\n    \"Shutdown\": [\"./lifecycle/shutdown.sh\"]\n  }"
+            format!(
+                ",\n  \"lifecycle\": {{\n    \"Init\": [\"./lifecycle/{init_name}\"],\n    \"Shutdown\": [\"./lifecycle/{shut_name}\"]\n  }}"
+            )
         } else {
-            ""
+            String::new()
         };
         fs::write(
             root.join(".claude-plugin").join("plugin.json"),
@@ -7388,7 +7423,9 @@ UU conflicted.rs",
         let pre_hooks = state.feature_config.hooks().pre_tool_use();
         assert_eq!(pre_hooks.len(), 1);
         assert!(
-            pre_hooks[0].ends_with("hooks/pre.sh"),
+            pre_hooks[0].ends_with("hooks/pre.sh")
+                || pre_hooks[0].ends_with("hooks\\pre.bat")
+                || pre_hooks[0].ends_with("hooks/pre.bat"),
             "expected installed plugin hook path, got {pre_hooks:?}"
         );
 
@@ -7420,7 +7457,7 @@ UU conflicted.rs",
                     }}
                   }}
                 }}"#,
-                script_path.to_string_lossy()
+                script_path.to_string_lossy().replace('\\', "\\\\")
             ),
         )
         .expect("write mcp settings");
@@ -7536,8 +7573,12 @@ UU conflicted.rs",
         let runtime_config = loader.load().expect("runtime config should load");
         let state = build_runtime_plugin_state_with_loader(&workspace, &loader, &runtime_config)
             .expect("runtime plugin state should load");
-        let mut executor =
-            CliToolExecutor::new(None, false, state.tool_registry.clone(), state.mcp_state.clone());
+        let mut executor = CliToolExecutor::new(
+            None,
+            false,
+            state.tool_registry.clone(),
+            state.mcp_state.clone(),
+        );
 
         let search_output = executor
             .execute("ToolSearch", r#"{"query":"remote","max_results":5}"#)
@@ -7600,7 +7641,9 @@ UU conflicted.rs",
         .expect("runtime should build");
 
         assert_eq!(
-            fs::read_to_string(&log_path).expect("init log should exist"),
+            fs::read_to_string(&log_path)
+                .expect("init log should exist")
+                .replace("\r\n", "\n"),
             "init\n"
         );
 
@@ -7609,7 +7652,9 @@ UU conflicted.rs",
             .expect("plugin shutdown should succeed");
 
         assert_eq!(
-            fs::read_to_string(&log_path).expect("shutdown log should exist"),
+            fs::read_to_string(&log_path)
+                .expect("shutdown log should exist")
+                .replace("\r\n", "\n"),
             "init\nshutdown\n"
         );
 

@@ -2,10 +2,7 @@ fn main() {
     tonic_build::configure()
         .build_server(true)
         .build_client(false)
-        .compile_protos(
-            &["../../../proto/jasusi.proto"],
-            &["../../../proto"],
-        )
+        .compile_protos(&["../../../proto/jasusi.proto"], &["../../../proto"])
         .expect("Failed to compile jasusi.proto");
 
     // eBPF compilation — skipped gracefully on non-Linux or if bpf-linker absent

@@ -338,7 +338,10 @@ impl CliApp {
 
     fn handle_clear(&mut self, confirm: bool, out: &mut impl Write) -> io::Result<CommandResult> {
         if !confirm {
-            writeln!(out, "Refusing to clear without confirmation. Re-run as /clear --confirm")?;
+            writeln!(
+                out,
+                "Refusing to clear without confirmation. Re-run as /clear --confirm"
+            )?;
             return Ok(CommandResult::Continue);
         }
 

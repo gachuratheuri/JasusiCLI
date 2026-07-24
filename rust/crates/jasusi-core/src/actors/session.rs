@@ -6,9 +6,7 @@ use kameo::Actor;
 use std::io::Write;
 use tokio::sync::mpsc;
 
-use crate::rpc::proto::{
-    tool_event, ProgressUpdate, ToolEvent, ToolOutput,
-};
+use crate::rpc::proto::{tool_event, ProgressUpdate, ToolEvent, ToolOutput};
 
 pub struct SessionActor {
     pub session_id: String,
@@ -32,9 +30,7 @@ impl Actor for SessionActor {
                 project = %self.project,
                 "SessionActor panicked: {}", err
             );
-            let audit_dir = dirs::home_dir()
-                .unwrap_or_default()
-                .join(".jasusi");
+            let audit_dir = dirs::home_dir().unwrap_or_default().join(".jasusi");
             let _ = std::fs::create_dir_all(&audit_dir);
             let panic_log = audit_dir.join("panic.log");
             let entry = format!(
@@ -87,18 +83,15 @@ impl kameo::message::Message<ExecuteToolMsg> for SessionActor {
         _ctx: &mut Context<Self, Self::Reply>,
     ) -> Self::Reply {
         self.turn_count += 1;
-        let stack = crate::sandbox::stack::SandboxStack::new(
-            msg.sandbox_profile,
-            msg.project_root.clone(),
-        );
+        let stack =
+            crate::sandbox::stack::SandboxStack::new(msg.sandbox_profile, msg.project_root.clone());
         if let Err(e) = stack.apply() {
             tracing::error!("Sandbox apply failed: {}", e);
         }
 
         // Firewall inspection — RULE 9: hash only, never log raw input_json
         let firewall = crate::security::firewall::SemanticFirewall::new();
-        let audit_hash =
-            crate::security::firewall::SemanticFirewall::audit_hash(&msg.input_json);
+        let audit_hash = crate::security::firewall::SemanticFirewall::audit_hash(&msg.input_json);
         match firewall.inspect(&msg.tool_name, &msg.input_json) {
             crate::security::firewall::FirewallVerdict::Allow => {
                 tracing::info!(tool = %msg.tool_name, input_hash = %audit_hash, "Firewall: ALLOW");
