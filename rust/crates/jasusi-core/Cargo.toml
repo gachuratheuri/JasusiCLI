@@ -21,6 +21,7 @@ crossterm = "0.28"
 pulldown-cmark = "0.13"
 rustyline = "15"
 runtime = { path = "../runtime" }
+jasusi-service = { path = "../jasusi-service" }
 plugins = { path = "../plugins" }
 syntect = "5"
 tools = { path = "../tools" }

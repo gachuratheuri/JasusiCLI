@@ -72,3 +72,32 @@ message UpsertResult { bool success = 1; }
 
 enum PermissionMode  { ALLOW = 0; DENY = 1; PROMPT = 2; }
 enum SandboxProfile  { STRICT = 0; FILE = 1; SEARCH = 2; WEB = 3; NONE = 4; }
+enum DeploymentProfile { LOCAL = 0; SERVICE = 1; }
+
+service ControlService {
+  rpc GetVersion     (Empty)             returns (VersionInfo);
+  rpc Health         (Empty)             returns (HealthStatus);
+  rpc Readiness      (Empty)             returns (ReadinessStatus);
+  rpc GetMetrics     (Empty)             returns (MetricsSnapshot);
+  rpc CheckQuota     (QuotaCheck)        returns (QuotaStatus);
+  rpc SubmitJob      (JobSubmit)         returns (JobReference);
+  rpc GetJobStatus   (JobReference)      returns (JobStatus);
+  rpc CancelJob      (JobReference)      returns (JobStatus);
+  rpc StreamJobEvents(JobReference)      returns (stream JobEvent);
+  rpc Drain          (DrainRequest)      returns (DrainStatus);
+}
+
+message VersionInfo      { string version = 1; string profile = 2; string git_sha = 3; }
+message HealthStatus     { bool healthy = 1; string version = 2; DeploymentProfile profile = 3; }
+message ComponentStatus  { string name = 1; bool ready = 2; string reason = 3; }
+message ReadinessStatus  { bool ready = 1; repeated ComponentStatus components = 2; }
+message MetricPoint      { string name = 1; uint64 value = 2; string unit = 3; uint64 timestamp_ms = 4; map<string,string> labels = 5; }
+message MetricsSnapshot  { repeated MetricPoint metrics = 1; }
+message QuotaCheck       { string scope = 1; string user_id = 2; string project_id = 3; string provider = 4; string tool = 5; uint64 requested = 6; }
+message QuotaStatus      { bool allowed = 1; uint64 remaining = 2; uint64 limit = 3; string scope = 4; string reason = 5; }
+message JobSubmit        { string idempotency_key = 1; string project_id = 2; string user_id = 3; string prompt = 4; string requested_profile = 5; }
+message JobReference     { string job_id = 1; }
+message JobStatus        { string job_id = 1; string state = 2; uint64 created_at_ms = 3; uint64 started_at_ms = 4; uint64 completed_at_ms = 5; string terminal_message = 6; }
+message JobEvent         { string job_id = 1; string event_type = 2; string payload_json = 3; uint64 emitted_at_ms = 4; }
+message DrainRequest     { bool enable = 1; uint32 timeout_seconds = 2; }
+message DrainStatus      { bool draining = 1; uint32 active_jobs = 2; bool complete = 3; }

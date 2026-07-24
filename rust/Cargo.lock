@@ -1986,6 +1986,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "hex",
+ "jasusi-service",
  "jsonschema",
  "kameo",
  "landlock",
@@ -2014,6 +2015,28 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
+]
+
+[[package]]
+name = "jasusi-service"
+version = "3.0.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "dirs",
+ "hex",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
