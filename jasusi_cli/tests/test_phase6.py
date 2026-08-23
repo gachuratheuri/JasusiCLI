@@ -155,10 +155,29 @@ def test_router_low_confidence_falls_back_to_developer() -> None:
 
 
 def test_router_decision_has_provider_and_model() -> None:
+    """Provider and model must come from the canonical registry, not a local map."""
+    from jasusi_cli.config.registry import PROVIDERS, model_for
+
     router = ScoredRouter()
     decision = router.route("implement a parser")
-    assert decision.provider in {"nemotron", "gemini", "kimi", "deepseek"}
-    assert len(decision.model) > 0
+    assert decision.provider in PROVIDERS
+    assert decision.model == model_for(decision.route)
+
+
+def test_router_agrees_with_core_router_for_every_entry_point() -> None:
+    """CLI and web must not classify the same prompt differently (F11)."""
+    from jasusi_cli.core.router import route as core_route
+
+    router = ScoredRouter()
+    for query in [
+        "implement a function to parse JSON in Rust",
+        "what is the difference between tokio and async-std?",
+        "run cargo test --workspace",
+        "review this module for security issues",
+        "design the persistence layer and explain the trade-offs " + "x" * 250,
+        "ok",
+    ]:
+        assert router.route(query).route == core_route(query), query
 
 
 # --- Compaction integration test ---

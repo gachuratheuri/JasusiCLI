@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
 import pytest
@@ -10,9 +9,11 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app import app, canonicalize_path, validate_project_id
-from jasusi_cli.tools.permissions import PermissionMode, PermissionPolicy, TerminalPrompter
+from jasusi_cli.tools.permissions import PermissionPolicy, TerminalPrompter
 
-client = TestClient(app)
+# A loopback client address is required: the adapter now refuses non-loopback
+# callers outright when no password is configured (see tests/test_web_security.py).
+client = TestClient(app, client=("127.0.0.1", 51234))
 
 
 def test_web_task_stream_rejects_get():

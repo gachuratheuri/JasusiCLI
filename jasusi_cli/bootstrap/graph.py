@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
 
+from jasusi_cli.config import registry
 from jasusi_cli.config.settings import JasusiSettings, SettingsLoader
 from jasusi_cli.memory.session_store import SessionStore
 from jasusi_cli.routing.scored_router import ScoredRouter
@@ -72,7 +73,8 @@ class BootstrapGraph:
     Phases 4a/4b (setup + commands) run in parallel via asyncio.gather.
     """
 
-    VERSION: str = "0.14.0"
+    #: Rendered from the canonical registry — never hardcoded.
+    VERSION: str = registry.VERSION
 
     def __init__(
         self,

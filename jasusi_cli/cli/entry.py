@@ -36,6 +36,20 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("input", nargs="+", help="Task description")
     fix_p = sub.add_parser("fix", help="Fix a file via Developer + Reviewer pipeline")
     fix_p.add_argument("filepath", help="Path to file to fix")
+    agent_p = sub.add_parser("agent", help="Run an autonomous coding agent on a task")
+    agent_p.add_argument("input", nargs="*", help="Task description")
+    agent_p.add_argument("--model", "-m", help="Override model (e.g. qwen/qwen3-coder-480b-a35b:free)")
+    agent_p.add_argument(
+        "--auto-approve",
+        action="store_true",
+        help="Auto-approve workspace file modifications without prompting",
+    )
+    agent_p.add_argument(
+        "--max-iterations",
+        type=int,
+        default=16,
+        help="Maximum tool iterations per turn (default: 16)",
+    )
     sub.add_parser("chat", help="Start interactive REPL")
     sub.add_parser("status", help="Show session status")
     sub.add_parser("history", help="Show history log")
@@ -91,6 +105,30 @@ def run_cli(argv: list[str] | None = None) -> int:
         result = run_task(task_text, project=args.project)
         print(result)
         return 0
+    if args.command == "agent":
+        task_text = " ".join(args.input)
+        if not task_text:
+            try:
+                task_text = input("jasusi agent task: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return 0
+            if not task_text:
+                print("No task provided.")
+                return 1
+
+        from jasusi_cli.agent import run_agent
+
+        return asyncio.run(
+            run_agent(
+                task=task_text,
+                cwd=Path.cwd(),
+                model=args.model,
+                session_id=args.session,
+                output_format=args.format,
+                auto_approve=args.auto_approve,
+                max_iterations=args.max_iterations,
+            )
+        )
     if args.command in ("chat", None, "task"):
         from jasusi_cli.cli.output import OutputFormat
 

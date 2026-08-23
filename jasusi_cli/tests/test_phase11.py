@@ -8,13 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from jasusi_cli.bootstrap.graph import BootstrapContext, BootstrapGraph, BootstrapPhase
+from jasusi_cli.bootstrap.graph import BootstrapGraph, BootstrapPhase
 from jasusi_cli.cli.entry import build_parser, run_cli
 from jasusi_cli.cli.task_runner import TaskRunner
 from jasusi_cli.integration.mock_clients import MockApiClient, MockToolExecutor, MockTurn
 from jasusi_cli.integration.wiring import RuntimeConfig, RuntimeFactory
 from jasusi_cli.routing.scored_router import ScoredRouter
-
 
 # ---------------------------------------------------------------------------
 # BootstrapGraph — FastPath tests
@@ -58,7 +57,10 @@ def test_status_fast_path_sees_existing_session(tmp_path: Path) -> None:
 
 
 def test_bootstrap_version_constant() -> None:
-    assert BootstrapGraph.VERSION == "0.14.0"
+    """BootstrapGraph must report the one canonical version, not its own copy."""
+    import jasusi_cli
+
+    assert BootstrapGraph.VERSION == jasusi_cli.__version__
 
 
 # ---------------------------------------------------------------------------

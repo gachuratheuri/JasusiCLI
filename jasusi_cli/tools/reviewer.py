@@ -8,6 +8,7 @@ Non-thinking variant: raw coding score 56.1 (vs 50.7 Speciale), zero CoT overhea
 """
 
 import re
+
 from jasusi_cli.core.clients import get_client, get_model
 
 REVIEWER_SYSTEM_PROMPT = """You are JasusiCLI's Reviewer agent.

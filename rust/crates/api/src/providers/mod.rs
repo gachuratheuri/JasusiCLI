@@ -30,6 +30,7 @@ pub enum ProviderKind {
     Anthropic,
     Xai,
     OpenAi,
+    OpenRouter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +40,13 @@ pub struct ProviderMetadata {
     pub base_url_env: &'static str,
     pub default_base_url: &'static str,
 }
+
+pub const OPENROUTER_METADATA: ProviderMetadata = ProviderMetadata {
+    provider: ProviderKind::OpenRouter,
+    auth_env: "OPENROUTER_API_KEY",
+    base_url_env: "OPENROUTER_BASE_URL",
+    default_base_url: openai_compat::DEFAULT_OPENROUTER_BASE_URL,
+};
 
 const MODEL_REGISTRY: &[(&str, ProviderMetadata)] = &[
     (
@@ -135,7 +143,7 @@ pub fn resolve_model_alias(model: &str) -> String {
                     "grok-2" => "grok-2",
                     _ => trimmed,
                 },
-                ProviderKind::OpenAi => trimmed,
+                ProviderKind::OpenAi | ProviderKind::OpenRouter => trimmed,
             })
         })
         .map_or_else(|| trimmed.to_string(), ToOwned::to_owned)
@@ -160,6 +168,9 @@ pub fn metadata_for_model(model: &str) -> Option<ProviderMetadata> {
             default_base_url: openai_compat::DEFAULT_XAI_BASE_URL,
         });
     }
+    if canonical.contains('/') {
+        return Some(OPENROUTER_METADATA);
+    }
     None
 }
 
@@ -168,8 +179,14 @@ pub fn detect_provider_kind(model: &str) -> ProviderKind {
     if let Some(metadata) = metadata_for_model(model) {
         return metadata.provider;
     }
+    if model.contains('/') {
+        return ProviderKind::OpenRouter;
+    }
     if anthropic::has_auth_from_env_or_saved().unwrap_or(false) {
         return ProviderKind::Anthropic;
+    }
+    if openai_compat::has_api_key("OPENROUTER_API_KEY") {
+        return ProviderKind::OpenRouter;
     }
     if openai_compat::has_api_key("OPENAI_API_KEY") {
         return ProviderKind::OpenAi;
@@ -185,6 +202,8 @@ pub fn max_tokens_for_model(model: &str) -> u32 {
     let canonical = resolve_model_alias(model);
     if canonical.contains("opus") {
         32_000
+    } else if canonical.contains(":free") || canonical.contains('/') {
+        16_384
     } else {
         64_000
     }
@@ -211,8 +230,28 @@ mod tests {
     }
 
     #[test]
+    fn detects_openrouter_from_slash_model_id() {
+        assert_eq!(
+            detect_provider_kind("nvidia/nemotron-3-ultra-550b-a35b:free"),
+            ProviderKind::OpenRouter,
+        );
+        assert_eq!(
+            detect_provider_kind("qwen/qwen3-coder-480b-a35b:free"),
+            ProviderKind::OpenRouter,
+        );
+        assert_eq!(
+            detect_provider_kind("deepseek/deepseek-r1:free"),
+            ProviderKind::OpenRouter,
+        );
+    }
+
+    #[test]
     fn keeps_existing_max_token_heuristic() {
         assert_eq!(max_tokens_for_model("opus"), 32_000);
         assert_eq!(max_tokens_for_model("grok-3"), 64_000);
+        assert_eq!(
+            max_tokens_for_model("nvidia/nemotron-3-ultra-550b-a35b:free"),
+            16_384
+        );
     }
 }

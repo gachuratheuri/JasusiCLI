@@ -15,6 +15,21 @@ const MAX_READ_SIZE: u64 = 10 * 1024 * 1024;
 /// Maximum file size that can be written (10 MB).
 const MAX_WRITE_SIZE: usize = 10 * 1024 * 1024;
 
+/// F05: fail-closed gate for every mutating filesystem tool.
+///
+/// Mirrors the shell gate in [`crate::bash`]. Writes are denied when no OS
+/// isolation is in effect unless the operator explicitly granted unsafe local
+/// mode, so a "sandboxed" claim can never be made about an unprotected write.
+fn guard_mutating_filesystem_access() -> io::Result<()> {
+    let cwd = std::env::current_dir()?;
+    let config = crate::ConfigLoader::default_for(&cwd)
+        .load()
+        .map_or_else(|_| crate::SandboxConfig::default(), |c| c.sandbox().clone());
+    let status = crate::resolve_sandbox_status(&config, &cwd);
+    crate::validate_execution_allowed(&status, crate::unsafe_local_mode(), true)
+        .map_err(io::Error::other)
+}
+
 /// Check whether a file appears to contain binary content by examining
 /// the first chunk for NUL bytes.
 fn is_binary_file(path: &Path) -> io::Result<bool> {
@@ -222,6 +237,7 @@ pub fn read_file(
 
 /// Replaces a file's contents and returns patch metadata.
 pub fn write_file(path: &str, content: &str) -> io::Result<WriteFileOutput> {
+    guard_mutating_filesystem_access()?;
     if content.len() > MAX_WRITE_SIZE {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -261,6 +277,7 @@ pub fn edit_file(
     new_string: &str,
     replace_all: bool,
 ) -> io::Result<EditFileOutput> {
+    guard_mutating_filesystem_access()?;
     let absolute_path = normalize_path(path)?;
     let original_file = fs::read_to_string(&absolute_path)?;
     if old_string == new_string {

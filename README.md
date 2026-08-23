@@ -1,4 +1,4 @@
-# JasusiCLI v3.3.0
+# JasusiCLI v3.0.0
 
 > Zero gravity. One signal. The void is the design.
 
@@ -9,14 +9,20 @@ No login. No cloud dashboard. Your keys, your machine, your terminal.
 
 ## Architecture
 
-| Role | Model | Provider | Cost |
-|------|-------|----------|------|
-| Developer | `xiaomi/mimo-v2-flash:free` | OpenRouter | Free |
-| Executor | `nvidia/nemotron-3-super-120b-a12b:free` | OpenRouter | Free |
-| Architect | `moonshotai/kimi-k2.5` | OpenRouter | Paid |
-| Researcher | `gemini-2.5-pro` | Google AI Studio | Free tier |
-| Reviewer | `deepseek/deepseek-v3.2` | OpenRouter | Paid |
-| Compaction | `gemini-2.5-flash-lite` | Google AI Studio | Free tier |
+The role → model → provider mapping is defined once, in
+[`jasusi_cli/config/registry.py`](jasusi_cli/config/registry.py). The CLI
+(`jasusi status`), the web status endpoint, and the router all render from it.
+Run `jasusi status` for the roster that is actually in effect; the table below
+is illustrative and can drift.
+
+| Role | Model | Provider |
+|------|-------|----------|
+| Developer | `gemini-2.5-flash` | Google AI Studio |
+| Executor | `nvidia/nemotron-3-super-120b-a12b:free` | OpenRouter |
+| Architect | `moonshotai/kimi-k2.5` | OpenRouter |
+| Researcher | `gemini-2.5-pro` | Google AI Studio |
+| Reviewer | `deepseek/deepseek-v3.2` | OpenRouter |
+| Compaction | `gemini-2.5-flash-lite` | Google AI Studio |
 
 Routing is heuristic — zero LLM calls, O(n) scoring across 6 dimensions.
 
@@ -52,8 +58,17 @@ UI_PASSWORD=                  # optional — leave empty for local-only use
 
 ```bash
 jasusi task "refactor this function to use list comprehension"
-jasusi fix myfile.py
+jasusi fix myfile.py     # proposes a fix; never writes to the file
 ```
+
+> [!IMPORTANT]
+> **Execution is fail-closed.** Shell and file-write tools are denied when the
+> host provides no effective OS isolation. Linux with user namespaces, or any
+> containerised environment, satisfies this. On other hosts — including
+> Windows and macOS today — pass `--unsafe-local-mode` to accept the risk
+> explicitly, or run inside a container.
+>
+> `jasusi sandbox` reports what is actually enforced on your machine.
 
 ### 4. Run the Web UI (LOCAL DEVELOPMENT ONLY)
 

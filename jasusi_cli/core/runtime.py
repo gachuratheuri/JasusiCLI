@@ -16,8 +16,9 @@ Three-stage compaction:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Generic, Protocol, TypeVar
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any, Generic, Protocol, TypeVar
 
 from jasusi_cli.api.client import StreamChunk
 
@@ -226,6 +227,10 @@ class ConversationRuntime(Generic[C, T]):
                 ))
 
             if not iter_tool_calls:
+                # Surface the provider's terminal reason so callers can tell a
+                # completed answer from one truncated by a token limit. It was
+                # previously tracked and then discarded.
+                yield StreamChunk(delta="", stop_reason=stop_reason)
                 break
 
             tool_result_blocks: list[ContentBlock] = []

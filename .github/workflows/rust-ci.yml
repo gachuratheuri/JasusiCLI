@@ -8,12 +8,14 @@ on:
       - 'omx-issue-*'
     paths:
       - .github/workflows/rust-ci.yml
+      - proto/**
       - rust/**
   pull_request:
     branches:
       - main
     paths:
       - .github/workflows/rust-ci.yml
+      - proto/**
       - rust/**
   workflow_dispatch:
 
@@ -43,14 +45,60 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all --check
 
-  test-rusty-claude-cli:
-    name: cargo test -p rusty-claude-cli
+  clippy:
+    name: cargo clippy
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The whole workspace is tested on every supported platform. The previous
+  # single-package job named a package (`rusty-claude-cli`) that does not exist
+  # in this workspace, so it could never have run a test.
+  test:
+    name: cargo test --workspace (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust -> target
-      - name: Run crate tests
-        run: cargo test -p rusty-claude-cli
+      # Pinned protoc: an older host protoc silently changes which proto
+      # syntax compiles, which previously broke clean builds.
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run workspace tests
+        run: cargo test --workspace
+
+  build-from-clean:
+    name: clean build (no cached build script output)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # Deliberately uncached: a stale build-script fingerprint hid a proto
+      # compilation failure from every other lane.
+      - name: Build workspace from scratch
+        run: cargo build --workspace --locked

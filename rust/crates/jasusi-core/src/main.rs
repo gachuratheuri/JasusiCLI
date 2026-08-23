@@ -1,7 +1,15 @@
+// `unused_imports` and `unused_variables` are deliberately NOT suppressed here:
+// blanket suppression is what allowed security controls to be defined, exported,
+// and unit-tested while never being called.
+//
+// `dead_code` remains allowed for this binary alone, and only because removing
+// the ~10 unreachable helpers it flags means unpicking a dependency cluster
+// (`InternalPromptProgressRun` plus its impls and channel plumbing, the MCP test
+// fixture re-export). That is a bounded refactor tracked under F13, not a
+// security control being hidden — no item flagged here guards anything. Verify
+// with `cargo clippy -p jasusi-core -- -W dead_code` before widening this.
 #![allow(
     dead_code,
-    unused_imports,
-    unused_variables,
     clippy::unneeded_struct_pattern,
     clippy::unnecessary_wraps,
     clippy::unused_self,
@@ -44,7 +52,7 @@ use api::{
 use commands::{
     handle_agents_slash_command, handle_mcp_slash_command, handle_plugins_slash_command,
     handle_skills_slash_command, render_slash_command_help, resume_supported_slash_commands,
-    slash_command_specs, validate_slash_command_input, SlashCommand,
+    slash_command_specs, SlashCommand,
 };
 use compat_harness::{extract_manifest, UpstreamPaths};
 use init::initialize_repo;
@@ -55,14 +63,13 @@ use runtime::{
     parse_oauth_callback_request_target, pricing_for_model, resolve_sandbox_status,
     save_oauth_credentials, ApiClient, ApiRequest, AssistantEvent, CompactionConfig, ConfigLoader,
     ConfigSource, ContentBlock, ConversationMessage, ConversationRuntime, McpServerManager,
-    McpTool, MessageRole, ModelPricing, OAuthAuthorizationRequest, OAuthConfig,
-    OAuthTokenExchangeRequest, PermissionMode, PermissionPolicy, ProjectContext, PromptCacheEvent,
-    ResolvedPermissionMode, RuntimeError, Session, TokenUsage, ToolError, ToolExecutor,
-    UsageTracker,
+    McpTool, MessageRole, OAuthAuthorizationRequest, OAuthConfig, OAuthTokenExchangeRequest,
+    PermissionMode, PermissionPolicy, ProjectContext, PromptCacheEvent, ResolvedPermissionMode,
+    RuntimeError, Session, TokenUsage, ToolError, ToolExecutor, UsageTracker,
 };
 use serde::Deserialize;
 use serde_json::json;
-use tools::{GlobalToolRegistry, RuntimeToolDefinition, ToolSearchOutput};
+use tools::{GlobalToolRegistry, RuntimeToolDefinition};
 
 const DEFAULT_MODEL: &str = "claude-opus-4-6";
 fn max_tokens_for_model(model: &str) -> u32 {
@@ -91,6 +98,7 @@ const CLI_OPTION_SUGGESTIONS: &[&str] = &[
     "--output-format",
     "--permission-mode",
     "--dangerously-skip-permissions",
+    "--unsafe-local-mode",
     "--allowedTools",
     "--allowed-tools",
     "--resume",
@@ -311,6 +319,13 @@ fn parse_args(args: &[String]) -> Result<CliAction, String> {
             }
             "--dangerously-skip-permissions" => {
                 permission_mode_override = Some(PermissionMode::DangerFullAccess);
+                index += 1;
+            }
+            "--unsafe-local-mode" => {
+                // F05: explicit, conspicuous opt-in to running mutating tools with
+                // no effective OS isolation. Without this, shell and write tools
+                // fail closed on platforms where sandboxing is unavailable.
+                runtime::set_unsafe_local_mode(true);
                 index += 1;
             }
             "-p" => {
@@ -5697,8 +5712,8 @@ mod tests {
         format_unknown_slash_command_message, normalize_permission_mode, parse_args,
         parse_git_status_branch, parse_git_status_metadata_for, parse_git_workspace_summary,
         permission_policy, print_help_to, push_output_block, render_config_report,
-        render_diff_report, render_diff_report_for, render_memory_report, render_repl_help,
-        render_resume_usage, resolve_model_alias, resolve_session_reference, response_to_events,
+        render_diff_report_for, render_memory_report, render_repl_help, render_resume_usage,
+        resolve_model_alias, resolve_session_reference, response_to_events,
         resume_supported_slash_commands, run_resume_command,
         slash_command_completion_candidates_with_sessions, status_context, validate_no_args,
         write_mcp_server_fixture, CliAction, CliOutputFormat, CliToolExecutor, GitWorkspaceSummary,

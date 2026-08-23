@@ -6,9 +6,7 @@ import asyncio
 import io
 from pathlib import Path
 
-import pytest
-
-from jasusi_cli.cli.commands import COMMAND_REGISTRY, CommandHandler, CommandResult
+from jasusi_cli.cli.commands import CommandHandler, CommandResult
 from jasusi_cli.cli.history import HistoryLog
 from jasusi_cli.cli.output import OutputFormat
 from jasusi_cli.cli.repl import Repl
@@ -20,7 +18,6 @@ from jasusi_cli.integration.mock_clients import (
     MockTurn,
 )
 from jasusi_cli.integration.wiring import RuntimeConfig, RuntimeFactory
-
 
 # ---------------------------------------------------------------------------
 # BrailleSpinner tests

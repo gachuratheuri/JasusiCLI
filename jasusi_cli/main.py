@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from jasusi_cli.config.registry import VERSION, roster
+
 
 def setup_logging(level: str = "info") -> None:
     logging.basicConfig(
@@ -21,7 +23,7 @@ def _print_status() -> None:
         ("OPENROUTER_API_KEY",   "OpenRouter (Executor / Architect / Reviewer)"),
         ("GOOGLE_AI_STUDIO_KEY", "Google AI Studio (Developer / Researcher / Compaction)"),
     ]
-    print("=== JasusiCLI v3.3.0 — API Key Status ===\n")
+    print(f"=== JasusiCLI v{VERSION} — API Key Status ===\n")
     for env_var, label in keys:
         val = os.environ.get(env_var)
         if val:
@@ -30,22 +32,14 @@ def _print_status() -> None:
             print(f"        Key: {masked}")
         else:
             print(f"  [!!]  {env_var} → {label}")
-            print(f"        NOT SET")
+            print("        NOT SET")
         print()
 
     print("=== Model Roster ===\n")
-    roster = [
-        ("Developer",  "gemini-2.5-flash",                      "Google AI Studio"),
-        ("Executor",   "nvidia/nemotron-3-super-120b-a12b:free", "OpenRouter"),
-        ("Architect",  "moonshotai/kimi-k2.5",                  "OpenRouter"),
-        ("Reviewer",   "deepseek/deepseek-v3.2",                "OpenRouter"),
-        ("Researcher", "gemini-2.5-pro",                        "Google AI Studio"),
-        ("Compaction", "gemini-2.5-flash-lite",                 "Google AI Studio"),
-    ]
     print(f"  {'Role':<12} {'Model':<40} {'Provider'}")
     print(f"  {'-'*12} {'-'*40} {'-'*20}")
-    for role, model, provider in roster:
-        print(f"  {role:<12} {model:<40} {provider}")
+    for entry in roster():
+        print(f"  {entry['role']:<12} {entry['model']:<40} {entry['provider']}")
     print()
 
     # Daily quota

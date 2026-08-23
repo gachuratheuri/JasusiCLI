@@ -6274,6 +6274,11 @@ mod tests {
 
     #[test]
     fn bash_tool_reports_success_exit_failure_timeout_and_background() {
+        // These tests exercise behaviour *after* the F05 fail-closed gate.
+        // CI hosts have no effective OS sandbox, so they must opt in
+        // explicitly, exactly as an operator would. The gate itself is
+        // covered by runtime::bash::tests::fails_closed_without_sandbox_or_opt_in.
+        runtime::set_unsafe_local_mode(true);
         let (cmd, fail_cmd) = if cfg!(windows) {
             ("echo hello", "echo oops 1>&2 & exit /b 7")
         } else {
@@ -6366,6 +6371,11 @@ mod tests {
 
     #[test]
     fn bash_targeted_tests_skip_branch_preflight() {
+        // These tests exercise behaviour *after* the F05 fail-closed gate.
+        // CI hosts have no effective OS sandbox, so they must opt in
+        // explicitly, exactly as an operator would. The gate itself is
+        // covered by runtime::bash::tests::fails_closed_without_sandbox_or_opt_in.
+        runtime::set_unsafe_local_mode(true);
         let _guard = env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -6400,6 +6410,11 @@ mod tests {
 
     #[test]
     fn file_tools_cover_read_write_and_edit_behaviors() {
+        // These tests exercise behaviour *after* the F05 fail-closed gate.
+        // CI hosts have no effective OS sandbox, so they must opt in
+        // explicitly, exactly as an operator would. The gate itself is
+        // covered by runtime::bash::tests::fails_closed_without_sandbox_or_opt_in.
+        runtime::set_unsafe_local_mode(true);
         let _guard = env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -7067,6 +7082,11 @@ printf 'pwsh:%s' "$1"
 
     #[test]
     fn given_no_enforcer_when_bash_then_executes_normally() {
+        // These tests exercise behaviour *after* the F05 fail-closed gate.
+        // CI hosts have no effective OS sandbox, so they must opt in
+        // explicitly, exactly as an operator would. The gate itself is
+        // covered by runtime::bash::tests::fails_closed_without_sandbox_or_opt_in.
+        runtime::set_unsafe_local_mode(true);
         let _guard = env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

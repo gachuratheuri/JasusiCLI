@@ -62,8 +62,16 @@ exclude = ["rust/", "target/"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+# Must match `requires-python`, not the newest interpreter available: a higher
+# target makes ruff suggest syntax (e.g. PEP 695 generics) that fails on 3.11,
+# which is still a supported and CI-tested version.
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules group imports beside the section they exercise; this keeps each
+# phase's dependencies visible at the point of use.
+"jasusi_cli/tests/*" = ["E402"]

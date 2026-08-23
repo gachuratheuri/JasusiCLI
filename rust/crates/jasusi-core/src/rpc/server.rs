@@ -272,7 +272,6 @@ impl ControlService for ControlServiceImpl {
         } else {
             request.requested_profile
         };
-        let key = jasusi_service::IdempotencyKey::scoped(&[&user_id, &project_id], &key);
         if let Some(existing) = self
             .queue
             .find_by_idempotency(&key)

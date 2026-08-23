@@ -10,8 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from typing import Any
 
 import httpx
 
@@ -96,23 +97,43 @@ class ProviderClient:
     def model(self) -> str:
         return self._model
 
-    async def complete(
+    def complete(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         system: str,
     ) -> AsyncIterator[StreamChunk]:
-        """Stream completion with retry on retryable status codes."""
-        payloads = await self._fetch_sse(messages, tools, system)
-        return self._iter_chunks(payloads)
+        """Stream a completion incrementally, retrying on retryable statuses.
 
-    async def _fetch_sse(
+        Returns an async iterator directly rather than awaiting one: the caller
+        must be able to observe the first token before the response completes.
+        """
+        return self._stream_chunks(messages, tools, system)
+
+    async def _stream_chunks(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         system: str,
-    ) -> list[str]:
-        """Execute HTTP request with retry, collect all SSE payloads."""
+    ) -> AsyncIterator[StreamChunk]:
+        """Yield chunks as bytes arrive; never buffers the whole response."""
+        async for payload in self._iter_sse(messages, tools, system):
+            chunk = self._parse_payload(payload)
+            if chunk is not None:
+                yield chunk
+
+    async def _iter_sse(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        system: str,
+    ) -> AsyncIterator[str]:
+        """Execute the HTTP request with retry, yielding SSE payloads as they arrive.
+
+        Retries only occur before any payload has been emitted. Once output has
+        been committed to the caller, a retry would duplicate or interleave
+        content, so the error is propagated instead.
+        """
         payload = self._build_payload(messages, tools, system)
         headers = {
             "Authorization": f"Bearer {self._api_key}",
@@ -121,6 +142,7 @@ class ProviderClient:
         }
 
         backoff_ms = INITIAL_BACKOFF_MS
+        emitted = False
         for attempt in range(MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as http:
@@ -153,15 +175,27 @@ class ProviderClient:
                         response.raise_for_status()
 
                         parser = SseParser()
-                        all_payloads: list[str] = []
                         async for raw_bytes in response.aiter_bytes():
-                            all_payloads.extend(parser.push_chunk(raw_bytes))
-                        all_payloads.extend(parser.finish())
-                        return all_payloads
+                            for payload in parser.push_chunk(raw_bytes):
+                                emitted = True
+                                yield payload
+                        for payload in parser.finish():
+                            emitted = True
+                            yield payload
+                        return
 
             except httpx.HTTPStatusError:
                 raise
             except Exception as e:
+                if emitted:
+                    # Output was already committed to the caller; retrying would
+                    # duplicate or interleave content.
+                    logger.error(
+                        "ProviderClient: %s failed mid-stream after emitting"
+                        " output — not retrying: %s",
+                        self._name, e,
+                    )
+                    raise
                 if attempt < MAX_RETRIES:
                     wait = min(backoff_ms / 1000.0, MAX_BACKOFF_MS / 1000.0)
                     logger.warning(

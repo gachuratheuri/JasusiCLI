@@ -21,10 +21,10 @@ from jasusi_cli.tools.implementations.file_tools import (
     GrepSearchTool,
 )
 from jasusi_cli.tools.permissions import (
-    AutoAllowPrompter,
     PermissionMode,
     PermissionPolicy,
     PermissionPrompter,
+    TerminalPrompter,
 )
 from jasusi_cli.tools.registry import ToolRegistry, ValidationError
 from jasusi_cli.tools.schema import ToolParameter, ToolSpec
@@ -113,7 +113,11 @@ class ToolExecutor:
         self._cwd = cwd or Path.cwd()
         self._registry = _build_default_registry(simple_mode)
         self._permissions = PermissionPolicy(
-            prompter=prompter or AutoAllowPrompter(),
+            # Never default to auto-allow. TerminalPrompter asks an interactive
+            # user and denies when stdin is not a TTY, so an unattended run
+            # cannot silently grant tool access. Callers that genuinely want
+            # unattended approval must pass a prompter explicitly.
+            prompter=prompter or TerminalPrompter(),
             overrides=permission_overrides,
         )
         self._bash = BashTool(self._cwd)

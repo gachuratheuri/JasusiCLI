@@ -3,11 +3,12 @@ Centralised API client factory for JasusiCLI v3.3.
 Two providers: OpenRouter (openai-compatible) + Google AI Studio (openai-compatible).
 """
 
-import os
 import json
+import os
 from datetime import date as _date
 from pathlib import Path
 from typing import Any
+
 from openai import OpenAI
 
 try:
@@ -30,7 +31,7 @@ def _get_openrouter_client() -> OpenAI:
     cfg = settings["providers"]["openrouter"]
     api_key = os.environ.get(cfg["api_key_env"])
     if not api_key:
-        raise EnvironmentError(
+        raise OSError(
             f"Missing env var: {cfg['api_key_env']}. "
             "Get your key at https://openrouter.ai/keys"
         )
@@ -46,7 +47,7 @@ def _get_googleai_client() -> OpenAI:
     cfg = settings["providers"]["googleai"]
     api_key = os.environ.get(cfg["api_key_env"])
     if not api_key:
-        raise EnvironmentError(
+        raise OSError(
             f"Missing env var: {cfg['api_key_env']}. "
             "Get your key at https://aistudio.google.com/app/apikey"
         )

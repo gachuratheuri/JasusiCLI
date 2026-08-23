@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shlex
+import signal
 import subprocess
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -13,10 +16,6 @@ logger = logging.getLogger(__name__)
 BASH_TIMEOUT_SECONDS: int = 30
 MAX_OUTPUT_CHARS: int = 8_192
 
-
-import os
-import signal
-import sys
 
 def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
     try:

@@ -31,14 +31,18 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      # Both test roots. `tests/` was previously excluded, which is why an
+      # orphaned module there could sit broken without failing CI.
       - name: Run tests
         run: |
-          python -m pytest jasusi_cli/tests/ \
+          python -m pytest jasusi_cli/tests/ tests/ \
             -v --tb=short \
-            --timeout=60 \
-            -x
+            --timeout=60
         env:
           JASUSI_TEST_MODE: "1"
+
+      - name: ruff
+        run: python -m ruff check jasusi_cli app.py tests
 
       - name: mypy strict
         run: |
@@ -58,11 +62,19 @@ jobs:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
 
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "25.1"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: cargo check
         run: cargo check --workspace --manifest-path rust/Cargo.toml
 
       - name: clippy
-        run: cargo clippy --workspace --manifest-path rust/Cargo.toml -- -D warnings
+        run: cargo clippy --workspace --all-targets --manifest-path rust/Cargo.toml -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --manifest-path rust/Cargo.toml
 
   smoke-tests:
     name: Smoke tests (no API key)

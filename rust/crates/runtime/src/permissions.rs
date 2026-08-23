@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -100,33 +100,82 @@ impl CapabilitySet {
     }
 }
 
+/// Resolve `..` and `.` lexically.
+///
+/// Returns `None` when the path climbs above its own root, which must always be
+/// treated as an escape rather than silently clamped.
+fn lexically_normalize(path: &Path) -> Option<PathBuf> {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    Some(out)
+}
+
 /// Verify if target path resolves strictly inside workspace root without symlink escape.
+///
+/// Correctness requirements this must satisfy:
+/// - Existing paths are canonicalized, so symlinks and junctions cannot escape.
+/// - Paths that do not exist yet (creates) are resolved against their deepest
+///   existing ancestor, then normalized lexically. Falling back to the raw path
+///   is unsafe: `Path::starts_with` compares components, so `root/../../etc` would
+///   compare as being inside `root`.
+/// - Any residual `..` that climbs above the filesystem root denies.
 #[must_use]
 pub fn is_path_safe_in_workspace(target: &Path, workspace_root: &Path) -> bool {
-    let canonical_root = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(_) => workspace_root.to_path_buf(),
-    };
+    let canonical_root = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
 
-    let target_canonical = if target.exists() {
-        match target.canonicalize() {
-            Ok(p) => p,
-            Err(_) => target.to_path_buf(),
-        }
-    } else if let Some(parent) = target.parent() {
-        if parent.exists() {
-            match parent.canonicalize() {
-                Ok(p) => p.join(target.file_name().unwrap_or_default()),
-                Err(_) => target.to_path_buf(),
-            }
-        } else {
-            target.to_path_buf()
-        }
-    } else {
+    // Relative targets are interpreted against the workspace root.
+    let absolute_target = if target.is_absolute() {
         target.to_path_buf()
+    } else {
+        canonical_root.join(target)
     };
 
-    target_canonical.starts_with(canonical_root)
+    if let Ok(resolved) = absolute_target.canonicalize() {
+        return resolved.starts_with(&canonical_root);
+    }
+
+    // The target does not exist. Find the deepest ancestor that does, canonicalize
+    // it (resolving any symlinked prefix), then re-attach the remaining components.
+    let mut existing = absolute_target.as_path();
+    let mut suffix: Vec<&std::ffi::OsStr> = Vec::new();
+    loop {
+        if existing.exists() {
+            break;
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                suffix.push(name);
+                existing = parent;
+            }
+            // Ran out of ancestors without finding anything real: normalize lexically.
+            _ => {
+                return lexically_normalize(&absolute_target)
+                    .is_some_and(|p| p.starts_with(&canonical_root));
+            }
+        }
+    }
+
+    let Ok(mut resolved) = existing.canonicalize() else {
+        return false;
+    };
+    for name in suffix.iter().rev() {
+        resolved.push(name);
+    }
+
+    // `suffix` may still contain `..` components (e.g. `root/missing/../../etc`).
+    lexically_normalize(&resolved).is_some_and(|p| p.starts_with(&canonical_root))
 }
 
 /// Permission level assigned to a tool invocation or runtime session.

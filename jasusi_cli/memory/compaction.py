@@ -42,7 +42,8 @@ def compact_main(entries: list[TranscriptEntry], summary: str) -> list[Transcrip
 
 
 def _make_summary_entry(summary: str) -> TranscriptEntry:
-    from jasusi_cli.memory.session_store import ContentBlock, ContentBlockType, TranscriptEntry as TE
+    from jasusi_cli.memory.session_store import ContentBlock, ContentBlockType
+    from jasusi_cli.memory.session_store import TranscriptEntry as TE
 
     return TE(
         role="system",

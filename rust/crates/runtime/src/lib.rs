@@ -133,9 +133,10 @@ pub use remote::{
 pub use router::{route as score_route, score_query, AgentRole, RouteResult};
 pub use sandbox::{
     build_linux_sandbox_command, detect_container_environment, detect_container_environment_from,
-    resolve_sandbox_status, resolve_sandbox_status_for_request, validate_execution_allowed,
-    ContainerEnvironment, FilesystemIsolationMode, LinuxSandboxCommand, SandboxConfig,
-    SandboxDetectionInputs, SandboxRequest, SandboxStatus, WindowsSandboxCommand,
+    resolve_sandbox_status, resolve_sandbox_status_for_request, set_unsafe_local_mode,
+    unsafe_local_mode, validate_execution_allowed, ContainerEnvironment, FilesystemIsolationMode,
+    LinuxSandboxCommand, SandboxConfig, SandboxDetectionInputs, SandboxRequest, SandboxStatus,
+    WindowsSandboxCommand,
 };
 pub use session::{
     ContentBlock, ConversationMessage, MessageRole, Session, SessionCompaction, SessionError,

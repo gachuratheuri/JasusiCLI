@@ -6,8 +6,6 @@ import io
 import json
 from pathlib import Path
 
-import pytest
-
 # --- OutputFormatter tests ---
 from jasusi_cli.cli.output import OutputEvent, OutputFormat, OutputFormatter
 
@@ -87,7 +85,7 @@ def test_output_status_writes_in_text_mode() -> None:
 
 
 # --- HistoryLog tests ---
-from jasusi_cli.cli.history import HistoryEvent, HistoryLog
+from jasusi_cli.cli.history import HistoryLog
 
 
 def test_history_append_returns_event(tmp_path: Path) -> None:
@@ -163,7 +161,7 @@ def test_history_tags_stored_and_retrieved(tmp_path: Path) -> None:
 
 
 # --- CommandHandler tests ---
-from jasusi_cli.cli.commands import CommandHandler, CommandResult
+from jasusi_cli.cli.commands import CommandHandler
 
 
 def _make_handler(tmp_path: Path) -> CommandHandler:

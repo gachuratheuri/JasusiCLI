@@ -42,6 +42,24 @@ COMPLEXITY_PATTERNS = [
 ]
 
 
+# ── Calibration constants ────────────────────────────────────────────────────
+
+#: Safety-ordered preference used to break near-ties deterministically.
+TIE_BREAK_ORDER = ["executor", "developer", "architect", "researcher", "reviewer"]
+
+#: Score gap below which the top two routes are treated as indistinguishable.
+AMBIGUITY_MARGIN = 0.05
+
+#: Minimum evidence required to accept a classification at all.
+CONFIDENCE_THRESHOLD = 0.45
+
+#: Deterministic fallback when evidence is insufficient.
+DEFAULT_ROLE = "developer"
+
+#: Token pressure at which routing yields to compaction.
+COMPACTION_TOKEN_THRESHOLD = 50_000
+
+
 @dataclass
 class RouteScore:
     role: str
@@ -49,10 +67,45 @@ class RouteScore:
     dimensions: dict[str, object] = field(default_factory=dict)
 
 
-def score_query(query: str, token_count: int = 0) -> str:
+@dataclass(frozen=True)
+class RouteEvaluation:
+    """A route decision together with the signals that justify it.
+
+    ``margin`` and ``ambiguous`` expose calibration rather than a raw score
+    ratio, so callers can distinguish "confidently developer" from "developer
+    because nothing else scored".
     """
-    Returns the winning role name string.
-    Compaction check is handled upstream in orchestrator before calling this.
+
+    role: str
+    score: float
+    runner_up: str
+    runner_up_score: float
+    margin: float
+    ambiguous: bool
+    below_evidence_floor: bool
+    dimensions: dict[str, dict[str, object]] = field(default_factory=dict)
+
+    @property
+    def confidence(self) -> float:
+        """Calibrated confidence in [0, 1].
+
+        Derived from the margin over the runner-up, not from the winner's share
+        of the total score: a large absolute score means little when a second
+        route scored almost as high.
+        """
+        if self.below_evidence_floor:
+            return MIN_CONFIDENCE
+        return max(MIN_CONFIDENCE, min(1.0, MIN_CONFIDENCE + self.margin))
+
+
+#: Floor reported for fallback decisions, so callers never see a bare 0.0.
+MIN_CONFIDENCE = 0.4
+
+
+def evaluate_query(query: str, token_count: int = 0) -> RouteEvaluation:
+    """
+    Score a query across six heuristic dimensions.
+    Compaction check is handled by :func:`evaluate` before calling this.
     """
     q = query.strip()
     q_lower = q.lower()
@@ -107,7 +160,6 @@ def score_query(query: str, token_count: int = 0) -> str:
         dims["architect"]["semantic_complexity"] = 0.2
 
     # ── Tie-break: within 0.05 → prefer by safety hierarchy ─────────────────
-    TIE_BREAK_ORDER = ["executor", "developer", "architect", "researcher", "reviewer"]
     ranked = sorted(
         scores.items(),
         key=lambda x: (-x[1], TIE_BREAK_ORDER.index(x[0])),
@@ -115,22 +167,56 @@ def score_query(query: str, token_count: int = 0) -> str:
     best_role, best_score = ranked[0]
     second_role, second_score = ranked[1]
 
-    if (best_score - second_score) <= 0.05:
+    ambiguous = (best_score - second_score) <= AMBIGUITY_MARGIN
+    if ambiguous:
         for preferred in TIE_BREAK_ORDER:
             if preferred in (best_role, second_role):
                 best_role = preferred
                 break
 
-    # ── Confidence floor: below 0.45 → default Developer ────────────────────
-    CONFIDENCE_THRESHOLD = 0.45
-    if best_score < CONFIDENCE_THRESHOLD:
-        return "developer"
+    below_evidence_floor = best_score < CONFIDENCE_THRESHOLD
+    if below_evidence_floor:
+        best_role = DEFAULT_ROLE
 
-    return best_role
+    return RouteEvaluation(
+        role=best_role,
+        score=best_score,
+        runner_up=second_role,
+        runner_up_score=second_score,
+        margin=best_score - second_score,
+        ambiguous=ambiguous,
+        below_evidence_floor=below_evidence_floor,
+        dimensions=dims,
+    )
+
+
+def score_query(query: str, token_count: int = 0) -> str:
+    """Return the winning role name for a query."""
+    return evaluate_query(query, token_count).role
 
 
 def route(query: str, token_count: int = 0) -> str:
     """Public entry point. Returns role name string."""
-    if token_count >= 50_000:
-        return "compaction"
-    return score_query(query, token_count)
+    return evaluate(query, token_count).role
+
+
+def evaluate(query: str, token_count: int = 0) -> RouteEvaluation:
+    """Full route decision including calibration signals.
+
+    This is the single scoring implementation for the Python side. Both
+    ``core.router`` callers and ``routing.scored_router`` resolve through it, so
+    the CLI and the web adapter cannot reach different conclusions for the same
+    prompt.
+    """
+    if token_count >= COMPACTION_TOKEN_THRESHOLD:
+        return RouteEvaluation(
+            role="compaction",
+            score=1.0,
+            runner_up=DEFAULT_ROLE,
+            runner_up_score=0.0,
+            margin=1.0,
+            ambiguous=False,
+            below_evidence_floor=False,
+            dimensions={},
+        )
+    return evaluate_query(query, token_count)

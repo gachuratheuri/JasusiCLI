@@ -19,17 +19,21 @@
   },
   "routing": {
     "developer":  { "model": "gemini-2.5-flash",                   "provider": "googleai"   },
-    "executor":   { "model": "nvidia/nemotron-3-super-120b-a12b:free","provider": "openrouter" },
+    "executor":   { "model": "nvidia/nemotron-3-ultra-550b-a35b:free","provider": "openrouter" },
     "architect":  { "model": "moonshotai/kimi-k2.5",                 "provider": "openrouter" },
     "researcher": { "model": "gemini-2.5-pro",                       "provider": "googleai"   },
     "reviewer":   { "model": "deepseek/deepseek-v3.2",               "provider": "openrouter" },
     "compaction": { "model": "gemini-2.5-flash-lite",                "provider": "googleai"   }
   },
   "fallback_chain": [
-    { "model": "xiaomi/mimo-v2-flash:free",               "provider": "openrouter" },
-    { "model": "qwen/qwen3-coder:free",                   "provider": "openrouter" },
-    { "model": "nvidia/nemotron-3-super-120b-a12b:free",  "provider": "openrouter" },
-    { "model": "mistralai/devstral-2512:free",            "provider": "openrouter" }
+    { "model": "qwen/qwen3-coder-480b-a35b:free",        "provider": "openrouter" },
+    { "model": "poolside/laguna-s-2.1:free",             "provider": "openrouter" },
+    { "model": "deepseek/deepseek-r1:free",              "provider": "openrouter" },
+    { "model": "cohere/north-mini-code:free",            "provider": "openrouter" },
+    { "model": "nvidia/nemotron-3-ultra-550b-a35b:free", "provider": "openrouter" },
+    { "model": "nvidia/nemotron-3-super-120b-a12b:free", "provider": "openrouter" },
+    { "model": "poolside/laguna-xs-2.1:free",            "provider": "openrouter" },
+    { "model": "qwen/qwen3-235b-a22b:free",              "provider": "openrouter" }
   ],
   "reviewer_security": {
     "strip_system_prompt_from_output": true,

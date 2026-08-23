@@ -56,3 +56,16 @@ target/
 *.egg
 .claude/settings.local.json
 .claude/sessions/
+**/.claude/sessions/
+.claw/sessions/
+**/.claw/sessions/
+
+# Toolchain installers and other binary blobs must never be committed
+rustup-init.exe
+*.msi
+*.dmg
+*.pkg
+
+# Sandbox scratch directories created next to the workspace
+.sandbox-home/
+.sandbox-tmp/

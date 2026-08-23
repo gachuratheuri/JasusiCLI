@@ -11,8 +11,6 @@ from jasusi_cli.bootstrap.graph import BootstrapContext, BootstrapGraph
 from jasusi_cli.cli.entry import build_parser
 from jasusi_cli.cli.task_runner import TaskRunner
 from jasusi_cli.integration.mock_clients import MockApiClient, MockToolExecutor, MockTurn
-from jasusi_cli.integration.wiring import RuntimeConfig, RuntimeFactory
-
 
 # ---------------------------------------------------------------------------
 # Package metadata tests
@@ -40,8 +38,30 @@ def test_bootstrap_version_matches_package() -> None:
     )
 
 
-def test_version_is_0_14_0() -> None:
-    assert jasusi_cli.__version__ == "0.14.0"
+def test_version_has_a_single_source() -> None:
+    """The package version must derive from distribution metadata.
+
+    Pinning a literal here is what allowed five different version strings to
+    coexist (package, web adapter, CLI status, Cargo workspace, README). The
+    invariant worth testing is agreement, not a specific number.
+    """
+    from jasusi_cli.config.registry import VERSION
+
+    assert jasusi_cli.__version__ == VERSION
+    assert VERSION.count(".") == 2, f"expected semantic version, got {VERSION!r}"
+
+
+def test_version_matches_pyproject() -> None:
+    """The declared packaging version is the one the code reports."""
+    import re
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    match = re.search(
+        r'^version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.M,
+    )
+    assert match, "pyproject.toml has no version field"
+    assert jasusi_cli.__version__ == match.group(1)
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +79,7 @@ def test_version_fast_path_no_api_calls() -> None:
     """run_version_fast_path must complete without any HTTP calls."""
     ctx = BootstrapGraph(cwd=Path.cwd()).run_version_fast_path()
     assert ctx is not None
-    assert BootstrapGraph.VERSION == "0.14.0"
+    assert BootstrapGraph.VERSION == jasusi_cli.__version__
 
 
 def test_status_fast_path_returns_context(tmp_path: Path) -> None:
@@ -171,9 +191,11 @@ def test_changelog_exists() -> None:
     root = Path(__file__).parent.parent.parent
     changelog = root / "CHANGELOG.md"
     assert changelog.exists()
-    content = changelog.read_text()
-    assert "0.14.0" in content
-    assert "Phase 14" in content
+    content = changelog.read_text(encoding="utf-8")
+    assert jasusi_cli.__version__ in content, (
+        f"CHANGELOG.md has no entry for the current version "
+        f"{jasusi_cli.__version__}"
+    )
 
 
 def test_github_ci_workflow_exists() -> None:

@@ -9,10 +9,13 @@ use tokio::runtime::Builder;
 use tokio::time::timeout;
 
 use crate::sandbox::{
-    build_linux_sandbox_command, resolve_sandbox_status_for_request, FilesystemIsolationMode,
-    SandboxConfig, SandboxStatus,
+    build_linux_sandbox_command, resolve_sandbox_status_for_request, unsafe_local_mode,
+    validate_execution_allowed, FilesystemIsolationMode, SandboxConfig, SandboxStatus,
 };
 use crate::ConfigLoader;
+
+/// Bound on how long process-tree termination may take before we give up waiting.
+const TREE_KILL_GRACE: Duration = Duration::from_secs(5);
 
 /// Input schema for the built-in bash execution tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -71,6 +74,11 @@ pub fn execute_bash(input: BashCommandInput) -> io::Result<BashCommandOutput> {
     let cwd = env::current_dir()?;
     let sandbox_status = sandbox_status_for_input(&input, &cwd);
 
+    // F05: fail closed. Shell execution is denied when no effective OS isolation is
+    // available unless the operator explicitly opted into unsafe local mode.
+    validate_execution_allowed(&sandbox_status, unsafe_local_mode(), true)
+        .map_err(io::Error::other)?;
+
     if input.run_in_background.unwrap_or(false) {
         let mut child = prepare_command(&input.command, &cwd, &sandbox_status, false);
         let child = child
@@ -108,11 +116,34 @@ async fn execute_bash_async(
     cwd: std::path::PathBuf,
 ) -> io::Result<BashCommandOutput> {
     let mut command = prepare_tokio_command(&input.command, &cwd, &sandbox_status, true);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    // Defence in depth only: kill_on_drop reaps the direct child, never the tree.
+    command.kill_on_drop(true);
+    // Put the child in its own process group so the whole tree can be signalled.
+    #[cfg(unix)]
+    command.process_group(0);
+
+    let child = command.spawn()?;
+    let child_pid = child.id();
+
+    // Held for the lifetime of the run. On drop, every descendant is killed —
+    // including any that detached from the parent/child tree.
+    #[cfg(windows)]
+    let _job_guard = contain_in_job_object(&child);
 
     let output_result = if let Some(timeout_ms) = input.timeout {
-        match timeout(Duration::from_millis(timeout_ms), command.output()).await {
-            Ok(result) => (result?, false),
-            Err(_) => {
+        if let Ok(result) =
+            timeout(Duration::from_millis(timeout_ms), child.wait_with_output()).await
+        {
+            (result?, false)
+        } else {
+            {
+                // F08: terminate and reap the entire descendant tree, not just the
+                // direct child. Dropping the future alone orphans grandchildren.
+                terminate_process_tree(child_pid).await;
                 return Ok(BashCommandOutput {
                     stdout: String::new(),
                     stderr: format!("Command exceeded timeout of {timeout_ms} ms"),
@@ -133,7 +164,7 @@ async fn execute_bash_async(
             }
         }
     } else {
-        (command.output().await?, false)
+        (child.wait_with_output().await?, false)
     };
 
     let (output, interrupted) = output_result;
@@ -246,6 +277,69 @@ fn prepare_tokio_command(
     prepared
 }
 
+/// Windows containment for a spawned child and all of its descendants.
+///
+/// `taskkill /T` walks the *current* parent/child tree, so it cannot reach a
+/// process that detached itself (`start /b`) and whose intermediate parent has
+/// already exited. A Job Object has no such gap: descendants inherit job
+/// membership, and closing the job with `KILL_ON_JOB_CLOSE` terminates all of
+/// them. Dropping the returned guard kills the job.
+///
+/// There is a small window between `spawn` and assignment; eliminating it
+/// requires `CREATE_SUSPENDED`, which needs `unsafe` and this workspace forbids
+/// it. `taskkill` remains as a secondary sweep.
+#[cfg(windows)]
+fn contain_in_job_object(child: &tokio::process::Child) -> Option<win32job::Job> {
+    let handle = child.raw_handle()?;
+
+    let job = win32job::Job::create().ok()?;
+    let mut info = job.query_extended_limit_info().ok()?;
+    info.limit_kill_on_job_close();
+    job.set_extended_limit_info(&info).ok()?;
+    job.assign_process(handle as isize).ok()?;
+    Some(job)
+}
+
+/// Terminate a child and every descendant it spawned.
+///
+/// `kill_on_drop` and `Child::kill` only reach the direct child; a shell that has
+/// forked background work leaves those descendants running. On Unix the child is
+/// placed in its own process group (see `execute_bash_async`) so a negative PID
+/// signals the whole group. On Windows the Job Object above is authoritative and
+/// `taskkill /T` is a secondary sweep.
+///
+/// The kill itself is bounded so a wedged reaper cannot block the caller.
+async fn terminate_process_tree(pid: Option<u32>) {
+    let Some(pid) = pid else {
+        return;
+    };
+
+    #[cfg(unix)]
+    let mut killer = {
+        let mut cmd = TokioCommand::new("kill");
+        cmd.arg("-KILL").arg(format!("-{pid}"));
+        cmd
+    };
+
+    #[cfg(windows)]
+    let mut killer = {
+        let mut cmd = TokioCommand::new("taskkill");
+        cmd.arg("/T").arg("/F").arg("/PID").arg(pid.to_string());
+        cmd
+    };
+
+    killer
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+
+    if let Ok(mut child) = killer.spawn() {
+        // Reap the reaper; ignore failure (the tree may already be gone).
+        let _ = timeout(TREE_KILL_GRACE, child.wait()).await;
+    }
+}
+
 fn prepare_sandbox_dirs(cwd: &std::path::Path) {
     let _ = std::fs::create_dir_all(cwd.join(".sandbox-home"));
     let _ = std::fs::create_dir_all(cwd.join(".sandbox-tmp"));
@@ -253,11 +347,65 @@ fn prepare_sandbox_dirs(cwd: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
     use super::{execute_bash, BashCommandInput};
-    use crate::sandbox::FilesystemIsolationMode;
+    use crate::sandbox::{set_unsafe_local_mode, FilesystemIsolationMode};
+
+    /// The unsafe-local-mode opt-in is process-wide by design: it is an operator
+    /// decision, not a per-call argument. Tests that read or write it must
+    /// therefore not run concurrently.
+    fn exclusive() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Most tests exercise behaviour *after* the fail-closed gate. CI hosts have no
+    /// effective sandbox, so they must opt in explicitly — exactly as an operator
+    /// would. `fails_closed_without_sandbox_or_opt_in` covers the gate itself.
+    fn allow_unsandboxed_execution() {
+        set_unsafe_local_mode(true);
+    }
+
+    #[test]
+    fn fails_closed_without_sandbox_or_opt_in() {
+        let _guard = exclusive();
+        set_unsafe_local_mode(false);
+        std::env::remove_var("JASUSI_UNSAFE_LOCAL_MODE");
+
+        let cwd = std::env::current_dir().expect("cwd");
+        let status = crate::resolve_sandbox_status(&crate::SandboxConfig::default(), &cwd);
+
+        let result = execute_bash(BashCommandInput {
+            command: String::from("echo should-not-run"),
+            timeout: Some(1_000),
+            description: None,
+            run_in_background: Some(false),
+            dangerously_disable_sandbox: Some(false),
+            namespace_restrictions: Some(true),
+            isolate_network: Some(false),
+            filesystem_mode: Some(FilesystemIsolationMode::WorkspaceOnly),
+            allowed_mounts: None,
+        });
+
+        if status.active {
+            // A genuinely sandboxed host is allowed to run the command.
+            assert!(result.is_ok(), "sandboxed host should permit execution");
+        } else {
+            let error = result.expect_err("unsandboxed execution must be denied");
+            assert!(
+                error.to_string().contains("Security Denial"),
+                "unexpected error: {error}"
+            );
+        }
+    }
 
     #[test]
     fn executes_simple_command() {
+        let _guard = exclusive();
+        allow_unsandboxed_execution();
         let output = execute_bash(BashCommandInput {
             command: String::from("echo hello"),
             timeout: Some(1_000),
@@ -278,6 +426,8 @@ mod tests {
 
     #[test]
     fn disables_sandbox_when_requested() {
+        let _guard = exclusive();
+        allow_unsandboxed_execution();
         let output = execute_bash(BashCommandInput {
             command: String::from("echo hello"),
             timeout: Some(1_000),
@@ -292,6 +442,79 @@ mod tests {
         .expect("bash command should execute");
 
         assert!(!output.sandbox_status.expect("sandbox status").enabled);
+    }
+
+    /// F08: a timeout must terminate the whole descendant tree, not just the shell.
+    ///
+    /// The command spawns a descendant that writes a marker file well after the
+    /// timeout fires. If any descendant survives cancellation, the marker appears.
+    #[test]
+    fn timeout_terminates_the_entire_process_tree() {
+        let _guard = exclusive();
+        allow_unsandboxed_execution();
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let marker = dir.path().join("survivor");
+        let marker_display = marker.display().to_string();
+
+        // The descendant is driven from a script file rather than an inline string:
+        // Rust's Windows argument escaping mangles nested quotes passed to cmd.exe.
+        #[cfg(unix)]
+        let (script, command) = {
+            let script = dir.path().join("spawn.sh");
+            std::fs::write(
+                &script,
+                format!("(sleep 6; echo alive > '{marker_display}') &\nsleep 60\n"),
+            )
+            .expect("write script");
+            (script.clone(), format!("sh '{}'", script.display()))
+        };
+        #[cfg(windows)]
+        let (script, command) = {
+            let script = dir.path().join("spawn.bat");
+            std::fs::write(
+                &script,
+                format!(
+                    "@echo off\r\nstart \"\" /b cmd /c \"ping -n 7 127.0.0.1 >nul & echo alive>\"\"{marker_display}\"\"\"\r\nping -n 60 127.0.0.1 >nul\r\n"
+                ),
+            )
+            .expect("write script");
+            // No quotes: Rust escapes inner quotes as \" which cmd.exe cannot parse.
+            (script.clone(), script.display().to_string())
+        };
+        assert!(
+            !script.display().to_string().contains(' '),
+            "test requires a space-free temp path; got {}",
+            script.display()
+        );
+
+        let output = execute_bash(BashCommandInput {
+            command,
+            timeout: Some(1_000),
+            description: None,
+            run_in_background: Some(false),
+            dangerously_disable_sandbox: Some(true),
+            namespace_restrictions: Some(false),
+            isolate_network: Some(false),
+            filesystem_mode: Some(FilesystemIsolationMode::Off),
+            allowed_mounts: None,
+        })
+        .expect("bash command should return a timeout result");
+
+        assert!(output.interrupted, "command should report interruption");
+        assert_eq!(
+            output.return_code_interpretation.as_deref(),
+            Some("timeout")
+        );
+
+        // Outlive the descendant's own delay; if it was orphaned it writes by now.
+        std::thread::sleep(std::time::Duration::from_secs(10));
+
+        assert!(
+            !marker.exists(),
+            "descendant process survived cancellation and wrote {}",
+            marker.display()
+        );
     }
 }
 

@@ -1,13 +1,14 @@
 """
-Executor tool — nvidia/nemotron-3-super-120b-a12b:free via OpenRouter.
-120B Total / 12B Active LatentMoE (Mamba-2 + Transformer + MTP).
+Executor tool — nvidia/nemotron-3-ultra-550b-a35b:free via OpenRouter.
+550B Total / 55B Active LatentMoE (Mamba-2 + Transformer + MTP).
 1,048,576 token context processed in O(n) linear time via Mamba-2.
 Trained across 21 RL environments including Terminal-Bench and SWE-RL.
 2.2x throughput vs GPT-OSS-120B class via Multi-Token Prediction layers.
-Also serves as Fallback 1 in the Developer cascade.
+Also serves in the Developer fallback cascade.
 """
 
 from typing import Any
+
 from jasusi_cli.core.clients import get_client, get_model
 
 EXECUTOR_SYSTEM_PROMPT = """You are JasusiCLI's Executor agent.

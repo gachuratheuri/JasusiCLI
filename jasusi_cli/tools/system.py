@@ -3,8 +3,8 @@ System tools — file I/O, bash, directory listing.
 Preserved as-is per project rules. Used by orchestrator.py.
 """
 
-import subprocess
 import os
+import subprocess
 from pathlib import Path
 
 

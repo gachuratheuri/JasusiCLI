@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,9 +12,70 @@ from jasusi_cli.core.runtime import ConversationRuntime
 from jasusi_cli.integration.worm_ledger import WormLedger
 from jasusi_cli.memory.session_store import SessionStore
 from jasusi_cli.security.prompt_builder import SystemPromptBuilder
-from jasusi_cli.tools.permissions import AutoAllowPrompter, PermissionPrompter
+from jasusi_cli.tools.permissions import PermissionPrompter, TerminalPrompter
 
 logger = logging.getLogger(__name__)
+
+
+class ProviderConfigurationError(RuntimeError):
+    """No usable provider is configured for the requested roles."""
+
+
+def build_provider_client(base_urls: dict[str, str] | None = None) -> Any:
+    """Construct a provider client from validated, enabled providers.
+
+    Only providers whose credential is actually present are registered. If none
+    is available the runtime fails at construction with an explanatory error,
+    rather than building an empty client that fails on the first turn with an
+    opaque ``AttributeError``/``KeyError``.
+    """
+    from jasusi_cli.api.client import ApiClient, MultiProviderClient
+    from jasusi_cli.api.provider_client import ProviderClient
+    from jasusi_cli.config.registry import (
+        PROVIDER_ENV_VARS,
+        model_for,
+        provider_for,
+    )
+
+    endpoints = base_urls or {
+        "openrouter": "https://openrouter.ai/api/v1",
+        "google_ai": "https://generativelanguage.googleapis.com/v1beta/openai",
+    }
+
+    clients: dict[str, ApiClient] = {}
+    missing: list[str] = []
+    for provider_key, env_var in PROVIDER_ENV_VARS.items():
+        api_key = os.environ.get(env_var, "").strip()
+        if not api_key:
+            missing.append(env_var)
+            continue
+        clients[provider_key] = ProviderClient(  # type: ignore[assignment]
+            name=provider_key,
+            api_key=api_key,
+            base_url=endpoints[provider_key],
+            model=model_for("developer"),
+        )
+
+    if not clients:
+        raise ProviderConfigurationError(
+            "no provider credentials configured; set one of: "
+            + ", ".join(sorted(missing)),
+        )
+
+    default_provider = provider_for("developer")
+    if default_provider not in clients:
+        # The role's preferred provider is unavailable; degrade explicitly and
+        # loudly rather than silently routing to an unintended provider.
+        fallback = next(iter(clients))
+        logger.warning(
+            "provider %s unavailable for the default role; using %s",
+            default_provider, fallback,
+        )
+        default_provider = fallback
+
+    return MultiProviderClient(
+        provider_clients=clients, default_provider=default_provider,
+    )
 
 
 @dataclass
@@ -63,10 +125,7 @@ class RuntimeFactory:
         system_prompt = prompt_builder.build_turn()
 
         if api_client is None:
-            from jasusi_cli.api.client import ApiClient, MultiProviderClient
-
-            provider_clients: dict[str, ApiClient] = {}
-            api_client = MultiProviderClient(provider_clients=provider_clients)
+            api_client = build_provider_client()
 
         if tool_executor is None:
             from jasusi_cli.tools.tool_executor import ToolExecutor
@@ -74,7 +133,10 @@ class RuntimeFactory:
             tool_executor = ToolExecutor(
                 cwd=self._cwd,
                 simple_mode=cfg.simple_mode,
-                prompter=prompter or AutoAllowPrompter(),
+                # Never auto-allow by default. TerminalPrompter asks an
+                # interactive user and denies outright when stdin is not a TTY,
+                # so an unattended run cannot silently grant tool access.
+                prompter=prompter or TerminalPrompter(),
             )
 
         runtime: ConversationRuntime[Any, Any] = ConversationRuntime(

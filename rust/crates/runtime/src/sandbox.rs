@@ -2,6 +2,7 @@ use std::env;
 #[cfg(unix)]
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
@@ -90,6 +91,27 @@ pub struct LinuxSandboxCommand {
     pub program: String,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+}
+
+/// Process-wide opt-in to running mutating tools without effective OS isolation.
+///
+/// Set by the `--unsafe-local-mode` CLI flag or the `JASUSI_UNSAFE_LOCAL_MODE`
+/// environment variable. Defaults to `false` so execution fails closed.
+static UNSAFE_LOCAL_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Record the operator's explicit opt-in to unsandboxed execution.
+pub fn set_unsafe_local_mode(enabled: bool) {
+    UNSAFE_LOCAL_MODE.store(enabled, Ordering::SeqCst);
+}
+
+/// Whether unsandboxed execution has been explicitly granted for this process.
+#[must_use]
+pub fn unsafe_local_mode() -> bool {
+    UNSAFE_LOCAL_MODE.load(Ordering::SeqCst)
+        || matches!(
+            env::var("JASUSI_UNSAFE_LOCAL_MODE").as_deref(),
+            Ok("1" | "true" | "TRUE")
+        )
 }
 
 /// Fail-closed execution gate: denies shell/write tools when sandboxing is inactive unless `unsafe_local_mode` is set.
@@ -200,9 +222,24 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
     let container = detect_container_environment();
     let namespace_supported = cfg!(target_os = "linux") && unshare_user_namespace_works();
     let network_supported = namespace_supported;
-    let filesystem_active =
-        request.enabled && request.filesystem_mode != FilesystemIsolationMode::Off;
+    // Filesystem isolation is only *active* when a mechanism can actually enforce it.
+    // Requesting a mode is not enforcement: without namespaces (or an enclosing
+    // container) the only effect is a relocated HOME/TMPDIR, which contains nothing.
+    let filesystem_enforceable = namespace_supported || container.in_container;
+    let filesystem_active = request.enabled
+        && request.filesystem_mode != FilesystemIsolationMode::Off
+        && filesystem_enforceable;
     let mut fallback_reasons = Vec::new();
+
+    if request.enabled
+        && request.filesystem_mode != FilesystemIsolationMode::Off
+        && !filesystem_enforceable
+    {
+        fallback_reasons.push(
+            "filesystem isolation unavailable (requires Linux namespaces or a container)"
+                .to_string(),
+        );
+    }
 
     if request.enabled && request.namespace_restrictions && !namespace_supported {
         fallback_reasons
@@ -220,9 +257,13 @@ pub fn resolve_sandbox_status_for_request(request: &SandboxRequest, cwd: &Path) 
             .push("filesystem allow-list requested without configured mounts".to_string());
     }
 
+    // `active` must mean "some mechanism is enforcing containment", never merely
+    // "nothing was requested". Disabling every isolation dimension in config must
+    // not make an unsandboxed process report itself as sandboxed.
     let active = request.enabled
         && (!request.namespace_restrictions || namespace_supported)
-        && (!request.network_isolation || network_supported);
+        && (!request.network_isolation || network_supported)
+        && (namespace_supported || container.in_container);
 
     let allowed_mounts = normalize_mounts(&request.allowed_mounts, cwd);
 

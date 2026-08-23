@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, AsyncIterator
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from jasusi_cli.api.provider_client import ProviderClient as ProviderClient
@@ -82,8 +83,51 @@ class MultiProviderClient:
     On other retryable errors, retries with exponential backoff up to MAX_RETRIES.
     """
 
-    def __init__(self, provider_clients: dict[str, ApiClient]) -> None:
+    def __init__(
+        self,
+        provider_clients: dict[str, ApiClient],
+        default_provider: str | None = None,
+    ) -> None:
+        if not provider_clients:
+            raise ValueError(
+                "MultiProviderClient requires at least one configured provider; "
+                "check that a provider API key is set",
+            )
         self._clients = provider_clients
+        self._default_provider = default_provider or next(iter(provider_clients))
+        if self._default_provider not in provider_clients:
+            raise ValueError(
+                f"default provider {self._default_provider!r} has no configured client",
+            )
+
+    async def complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        system: str,
+    ) -> AsyncIterator[StreamChunk]:
+        """Conform to ``ApiClientProtocol``.
+
+        ``ConversationRuntime`` drives every turn through ``complete``. This
+        adapter previously exposed only ``stream`` with a different signature,
+        so the default-wired runtime raised ``AttributeError`` on its first
+        turn. Provider selection and fallback stay inside this class.
+        """
+        client = self._clients[self._default_provider]
+        completer = getattr(client, "complete", None)
+        if completer is not None:
+            async for chunk in completer(messages, tools, system):
+                yield chunk
+            return
+
+        # Legacy ApiClient shape: adapt to the streaming signature.
+        async for chunk in self.stream(
+            messages=messages,  # type: ignore[arg-type]
+            system_prompt=system,
+            model="",
+            provider=self._default_provider,
+        ):
+            yield chunk
 
     async def stream(
         self,

@@ -14,7 +14,32 @@ To maintain strict dual-control accountability, every finding and phase delivera
 
 ---
 
+## 1a. Closure evidence standard (mandatory)
+
+A finding may not be marked closed on the strength of a passing test alone. The
+first remediation pass produced three security controls that were implemented,
+exported, unit-tested, and **never called by any production code path**
+(`validate_execution_allowed`, `validate_and_apply_patch`, and the web
+`canonicalize_path`). Every gate signed off green while the system remained
+unprotected.
+
+Closure therefore requires **all** of:
+
+1. **Reachability.** The control is invoked on the path a real request takes.
+2. **Removal sensitivity.** Deleting or bypassing the control makes a test fail.
+   A test that exercises the function directly does not satisfy this.
+3. **Platform truth.** Where a guarantee is unavailable on a supported platform,
+   the code fails closed and the documentation states the limitation. Silence is
+   not an acceptable substitute for an unimplemented control.
+4. **No suppression.** `dead_code`, `unused_imports`, and `unused_variables` must
+   not be suppressed in crates carrying security logic — blanket suppression is
+   what concealed the unreachable controls above.
+
 ## 2. Findings Traceability Matrix (F01–F16)
+
+> **Status column reflects verified behaviour, not intended behaviour.** Entries
+> marked OPEN were previously recorded as closed but did not survive
+> verification against the code.
 
 | Finding ID | Finding Description | Severity | Accountable Owner | Independent Reviewer | Target Remediation Phase | Required Closure Evidence | Verification Test |
 |---|---|---|---|---|---|---|---|

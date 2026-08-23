@@ -127,7 +127,7 @@ class BashTool:
                 stdout_bytes, _ = await asyncio.wait_for(
                     proc.communicate(), timeout=timeout,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.communicate()
                 return f"[error] BashTool: command timed out after {timeout:.0f}s"

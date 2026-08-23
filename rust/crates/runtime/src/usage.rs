@@ -58,6 +58,30 @@ impl UsageCostEstimate {
 #[must_use]
 pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
     let normalized = model.to_ascii_lowercase();
+    if normalized.ends_with(":free") {
+        return Some(ModelPricing {
+            input_cost_per_million: 0.0,
+            output_cost_per_million: 0.0,
+            cache_creation_cost_per_million: 0.0,
+            cache_read_cost_per_million: 0.0,
+        });
+    }
+    if normalized.contains("deepseek") {
+        return Some(ModelPricing {
+            input_cost_per_million: 0.26,
+            output_cost_per_million: 0.38,
+            cache_creation_cost_per_million: 0.0,
+            cache_read_cost_per_million: 0.0,
+        });
+    }
+    if normalized.contains("kimi") {
+        return Some(ModelPricing {
+            input_cost_per_million: 0.60,
+            output_cost_per_million: 1.20,
+            cache_creation_cost_per_million: 0.0,
+            cache_read_cost_per_million: 0.0,
+        });
+    }
     if normalized.contains("haiku") {
         return Some(ModelPricing {
             input_cost_per_million: 1.0,
@@ -309,5 +333,31 @@ mod tests {
         let tracker = UsageTracker::from_session(&session);
         assert_eq!(tracker.turns(), 1);
         assert_eq!(tracker.cumulative_usage().total_tokens(), 8);
+    }
+
+    #[test]
+    fn free_tier_models_have_zero_cost() {
+        let pricing =
+            pricing_for_model("nvidia/nemotron-3-ultra-550b-a35b:free").expect("free tier pricing");
+        assert_eq!(format_usd(pricing.input_cost_per_million), "$0.0000");
+        assert_eq!(format_usd(pricing.output_cost_per_million), "$0.0000");
+
+        let usage = TokenUsage {
+            input_tokens: 1_000_000,
+            output_tokens: 500_000,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        };
+        let cost = usage.estimate_cost_usd_with_pricing(pricing);
+        assert_eq!(format_usd(cost.total_cost_usd()), "$0.0000");
+    }
+
+    #[test]
+    fn known_openrouter_paid_models_have_correct_pricing() {
+        let deepseek = pricing_for_model("deepseek/deepseek-v3.2").expect("deepseek pricing");
+        assert_eq!(format_usd(deepseek.input_cost_per_million), "$0.2600");
+
+        let kimi = pricing_for_model("moonshotai/kimi-k2.5").expect("kimi pricing");
+        assert_eq!(format_usd(kimi.input_cost_per_million), "$0.6000");
     }
 }

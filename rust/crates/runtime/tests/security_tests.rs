@@ -58,6 +58,74 @@ fn test_path_canonicalization_prevents_workspace_escape() {
 }
 
 #[test]
+fn test_path_containment_rejects_traversal_through_missing_directories() {
+    let dir = tempdir().unwrap();
+    let root = dir.path();
+
+    // Neither the intermediate directory nor the target exists. Resolution must not
+    // fall back to the raw path: `Path::starts_with` is component-wise, so an
+    // unresolved `root/../../etc/passwd` would compare as being inside `root`.
+    let escape = root
+        .join("does-not-exist")
+        .join("..")
+        .join("..")
+        .join("etc")
+        .join("passwd");
+    assert!(
+        !is_path_safe_in_workspace(&escape, root),
+        "traversal through a missing directory must be denied"
+    );
+
+    // A legitimate create under a missing directory is still permitted.
+    let legitimate = root.join("new-dir").join("new-file.rs");
+    assert!(
+        is_path_safe_in_workspace(&legitimate, root),
+        "creating a new file inside the workspace must be permitted"
+    );
+}
+
+#[test]
+fn test_path_containment_rejects_sibling_prefix_directory() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("workspace");
+    let sibling = dir.path().join("workspace-evil");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&sibling).unwrap();
+
+    let target = sibling.join("payload.txt");
+    File::create(&target).unwrap();
+
+    // String-prefix comparison would accept this; component comparison must not.
+    assert!(!is_path_safe_in_workspace(&target, &root));
+}
+
+#[test]
+fn test_symlink_escape_is_denied() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("workspace");
+    let outside = dir.path().join("outside");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    let secret = outside.join("secret.txt");
+    fs::write(&secret, "classified").unwrap();
+
+    let link = root.join("link.txt");
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&secret, &link).is_ok();
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(&secret, &link).is_ok();
+
+    if !linked {
+        // Windows without Developer Mode cannot create symlinks unprivileged.
+        // This is a documented platform limitation, not a passing assertion.
+        eprintln!("skipping: symlink creation unavailable on this host");
+        return;
+    }
+
+    assert!(!is_path_safe_in_workspace(&link, &root));
+}
+
+#[test]
 fn test_fail_closed_sandbox_validation() {
     let status = SandboxStatus {
         enabled: true,

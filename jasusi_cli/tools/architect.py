@@ -7,6 +7,7 @@ Agent Swarm: up to 100 parallel sub-agents for complex design decomposition.
 """
 
 from typing import Any
+
 from jasusi_cli.core.clients import get_client, get_model
 
 ARCHITECT_SYSTEM_PROMPT = """You are JasusiCLI's Architect agent.

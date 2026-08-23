@@ -1,6 +1,28 @@
 # Reproducible Baseline Build, Test, and Quality Report
 
-* **Status:** Complete (Phase 0 Governance Milestone G0 & Phase 1 Security Milestone G1)
+> **CORRECTION (post-verification).** The gate sign-offs recorded below were not
+> supported by the code at the time they were recorded, and several must be read
+> as withdrawn rather than achieved:
+>
+> - **G1 was not met.** "A timeout leaves no descendant process alive" was never
+>   tested and was false: the timeout path dropped the future and orphaned the
+>   whole tree. "Non-loopback web startup without configured authentication
+>   fails" was not implemented.
+> - **G3 was not met.** The fail-closed execution gate had no call sites. The
+>   `--unsafe-local-mode` flag named in its own error string did not exist.
+>   `filesystem_active` was computed from configuration alone.
+> - **G5 was not met.** `validate_and_apply_patch` had no call sites, and
+>   `run_fix` could still write raw model output to a source file.
+> - **The recorded `cargo test --workspace` runs were not reproducible.** A stale
+>   build-script fingerprint masked a `proto/jasusi.proto` compilation failure;
+>   the workspace did not build from clean.
+>
+> Each item is fixed and covered by a test that fails if the control is removed;
+> see the Unreleased section of `CHANGELOG.md` and the closure evidence standard
+> in `docs/security/findings_traceability.md`. Historical entries are retained
+> unedited below as a record of what was claimed.
+
+* **Status:** Superseded — see correction above
 * **Date:** 2026-07-24
 * **Environment:** Windows 11 (OS: Windows_NT x64), Rust 1.94.0 / cargo, Python 3.12.3, pytest 8.3.4, ruff 0.4.10
 
