@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: jasusicli
+    runtime: docker
+    plan: starter
+    region: oregon
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/status
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: UI_PASSWORD
+        generateValue: true
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GOOGLE_AI_STUDIO_KEY
+        sync: false
+      - key: JASUSI_WEB_MAX_CONCURRENCY
+        value: 4
+      - key: JASUSI_WEB_MAX_STREAM_SECONDS
+        value: 600
+    disk:
+      name: jasusi-data
+      mountPath: /root/.jasusi
+      sizeGB: 1

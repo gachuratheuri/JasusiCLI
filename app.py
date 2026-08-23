@@ -556,3 +556,11 @@ async def index():
     if html_path.exists():
         return HTMLResponse(html_path.read_text(encoding="utf-8"))
     return HTMLResponse("<h1>UI not found — run the build step</h1>", 500)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.environ.get("PORT", "8000"))
+    host = os.environ.get("HOST", "0.0.0.0")
+    uvicorn.run("app:app", host=host, port=port, log_level="info")
