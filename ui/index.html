@@ -648,56 +648,80 @@ async function sendTask() {
   const spinId = 'spin-' + Date.now();
   const iv = addSpinner(out, spinId);
 
-  const url = `${API}/api/task/stream?prompt=${encodeURIComponent(prompt)}&project=${encodeURIComponent(project)}`;
+  const CLASS_MAP = {
+    route:    'role',      // purple  — routing decision
+    status:   'dim',       // faint   — jasusi status
+    reviewer: 'warn',      // yellow  — approve / reject
+    error:    'error',     // red     — error line
+    warn:     'warn',      // yellow  — quota / rate-limit
+    fence:    'dim',       // faint   — ``` delimiters
+    code:     'cmd',       // cyan    — code content
+    token:    'success',   // green   — LLM answer text
+  };
+
   try {
-    const es = new EventSource(_sseUrl(url));
-    es.onmessage = e => {
-      const d = JSON.parse(e.data);
+    const resp = await fetch(`${API}/api/task/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, project }),
+    });
 
-      // Terminal event — stop spinner and unlock input
-      if (d.type === 'done') {
-        removeSpinner(spinId, iv);
-        if (d.status === 'error') {
-          appendLine(out, `✖ exited with code ${d.code}`, 'error');
-        } else {
-          appendLine(out, '✅ Done', 'success');
+    if (!resp.ok) {
+      removeSpinner(spinId, iv);
+      let errMsg = `HTTP ${resp.status} ${resp.statusText}`;
+      try {
+        const errJson = await resp.json();
+        if (errJson.message) errMsg = errJson.message;
+      } catch(_) {}
+      appendLine(out, `❌ Server error: ${errMsg}`, 'error');
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        const lines = part.split('\n');
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const d = JSON.parse(line.slice(5).trim());
+            if (d.type === 'done') {
+              removeSpinner(spinId, iv);
+              if (d.status === 'error') {
+                appendLine(out, `✖ exited with code ${d.code}`, 'error');
+              } else {
+                appendLine(out, '✅ Done', 'success');
+              }
+              appendLine(out, '', 'dim');
+              continue;
+            }
+            const cssClass = CLASS_MAP[d.type] ?? 'plain';
+            removeSpinner(spinId, iv);
+            appendLine(out, d.text, cssClass);
+          } catch(pe) {
+            console.error('Failed to parse SSE frame:', line, pe);
+          }
         }
-        appendLine(out, '', 'dim');
-        es.close();
-        running = false;
-        document.getElementById('send-btn').disabled = false;
-        input.focus();
-        refreshQuota();
-        return;
       }
-
-      // Typed output lines — each maps to an existing CSS class
-      const CLASS_MAP = {
-        route:    'role',      // purple  — routing decision
-        status:   'dim',       // faint   — jasusi status
-        reviewer: 'warn',      // yellow  — approve / reject
-        error:    'error',     // red     — error line
-        warn:     'warn',      // yellow  — quota / rate-limit
-        fence:    'dim',       // faint   — ``` delimiters
-        code:     'cmd',       // cyan    — code content
-        token:    'success',   // green   — LLM answer text
-      };
-      const cssClass = CLASS_MAP[d.type] ?? 'plain';
-      removeSpinner(spinId, iv);
-      appendLine(out, d.text, cssClass);
-    };
-    es.onerror = () => {
-      removeSpinner(spinId, iv);
-      appendLine(out, '❌ Connection error — is the server running?', 'error');
-      es.close();
-      running = false;
-      document.getElementById('send-btn').disabled = false;
-    };
+    }
   } catch(err) {
     removeSpinner(spinId, iv);
-    appendLine(out, '❌ ' + err.message, 'error');
+    appendLine(out, '❌ ' + (err.message || 'Connection error — is the server running?'), 'error');
+  } finally {
+    removeSpinner(spinId, iv);
     running = false;
     document.getElementById('send-btn').disabled = false;
+    input.focus();
+    refreshQuota();
   }
 }
 
