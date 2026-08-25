@@ -48,7 +48,7 @@ where = ["."]
 include = ["jasusi_cli*"]
 
 [tool.pytest.ini_options]
-testpaths = ["jasusi_cli/tests"]
+testpaths = ["jasusi_cli/tests", "tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"

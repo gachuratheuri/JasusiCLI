@@ -62,7 +62,7 @@ ROLES: tuple[RoleSpec, ...] = (
     RoleSpec("developer", "gemini-2.5-flash", "Google AI Studio", "google_ai", 500),
     RoleSpec(
         "executor",
-        "nvidia/nemotron-3-ultra-550b-a35b:free",
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
         "OpenRouter",
         "openrouter",
     ),

@@ -141,7 +141,7 @@ def build_workspace_context(
     if agents_path.exists():
         try:
             raw = agents_path.read_text(encoding="utf-8", errors="replace")
-            agents_md = clean_injection(raw)
+            agents_md = clean_injection(raw).cleaned
         except Exception as e:
             logger.warning("Could not read AGENTS.md: %s", e)
 
@@ -150,7 +150,7 @@ def build_workspace_context(
     if jasusi_md_path.exists():
         try:
             raw = jasusi_md_path.read_text(encoding="utf-8", errors="replace")
-            instruction_files.append(clean_injection(raw))
+            instruction_files.append(clean_injection(raw).cleaned)
         except Exception as e:
             logger.warning("Could not read JASUSI.md: %s", e)
 

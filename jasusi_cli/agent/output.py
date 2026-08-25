@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from jasusi_cli.config.registry import VERSION
+
 
 @dataclass
 class AgentStats:
@@ -71,7 +73,7 @@ class AgentOutput:
             print(json.dumps(evt), file=self.stream, flush=True)
             return
 
-        print(f"\n{self.bold('jasusi agent')} {self.dim('v3.3.0')} — {self.cyan('session')} {session_id}", file=self.stream)
+        print(f"\n{self.bold('jasusi agent')} {self.dim(f'v{VERSION}')} — {self.cyan('session')} {session_id}", file=self.stream)
         print(f"  {self.dim('workspace:')} {workspace_root}", file=self.stream)
         print(f"  {self.dim('model:')}     {self.bold(model)} ({provider})", file=self.stream)
         if fallback_count > 0:

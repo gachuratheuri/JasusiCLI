@@ -1,10 +1,7 @@
 """
-Executor tool — nvidia/nemotron-3-ultra-550b-a35b:free via OpenRouter.
+Executor tool — nvidia/nemotron-3-ultra-550b-a55b:free via OpenRouter.
 550B Total / 55B Active LatentMoE (Mamba-2 + Transformer + MTP).
-1,048,576 token context processed in O(n) linear time via Mamba-2.
-Trained across 21 RL environments including Terminal-Bench and SWE-RL.
-2.2x throughput vs GPT-OSS-120B class via Multi-Token Prediction layers.
-Also serves in the Developer fallback cascade.
+512,288-token context, 16,384 max completion tokens.
 """
 
 from typing import Any

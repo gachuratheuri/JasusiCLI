@@ -36,7 +36,7 @@ class AutoApprovePrompter:
         {"file_read", "file_write", "file_edit", "glob_search", "grep_search", "todo_write"}
     )
 
-    def __init__(self, allow_bash: bool = True) -> None:
+    def __init__(self, allow_bash: bool = False) -> None:
         self.allow_bash = allow_bash
         self._terminal = TerminalPrompter()
 
@@ -128,15 +128,18 @@ class FallbackAwareAgentClient:
                 output_tokens = getattr(response.usage, "completion_tokens", 0) if response.usage else 0
 
                 if msg.tool_calls:
-                    for tc in msg.tool_calls:
+                    for i, tc in enumerate(msg.tool_calls):
+                        # Only report token usage on the first chunk to avoid N-fold double counting
+                        in_tok = input_tokens if i == 0 else 0
+                        out_tok = output_tokens if i == 0 else 0
                         yield StreamChunk(
                             delta="",
                             is_tool_call=True,
                             tool_name=tc.function.name,
                             tool_input_json=tc.function.arguments.encode("utf-8"),
                             tool_use_id=tc.id,
-                            input_tokens=input_tokens,
-                            output_tokens=output_tokens,
+                            input_tokens=in_tok,
+                            output_tokens=out_tok,
                         )
                 else:
                     yield StreamChunk(
@@ -205,8 +208,10 @@ async def run_agent(
 
     # 5. Build prompter and conversation runtime
     prompter: PermissionPrompter
-    if auto_approve or permission_mode in ("danger-full-access", "allow"):
+    if permission_mode in ("danger-full-access", "allow"):
         prompter = AutoApprovePrompter(allow_bash=True)
+    elif auto_approve:
+        prompter = AutoApprovePrompter(allow_bash=False)
     else:
         prompter = TerminalPrompter()
 
@@ -225,8 +230,9 @@ async def run_agent(
         api_client=api_client,
         prompter=prompter,
     )
-    # Set the generated system prompt directly on the runtime
+    # Set the generated system prompt and iteration limit directly on the runtime
     runtime._system = system_prompt
+    runtime.MAX_ITERATIONS = max_iterations
 
     # 6. Execute autonomous turn
     stats = AgentStats(session_id=sid)
@@ -255,6 +261,25 @@ async def run_agent(
             stats.output_tokens += chunk.output_tokens
 
         stats.tool_calls_count = tool_call_count
+
+        # Cost estimation
+        norm_model = model_sel.model_id.lower()
+        if norm_model.endswith(":free"):
+            stats.cost_usd = 0.0
+        elif "deepseek" in norm_model:
+            stats.cost_usd = (stats.input_tokens / 1_000_000 * 0.26) + (stats.output_tokens / 1_000_000 * 0.38)
+        elif "kimi" in norm_model:
+            stats.cost_usd = (stats.input_tokens / 1_000_000 * 0.45) + (stats.output_tokens / 1_000_000 * 2.25)
+        else:
+            stats.cost_usd = (stats.input_tokens / 1_000_000 * 15.0) + (stats.output_tokens / 1_000_000 * 75.0)
+
+        # Persist session token counts to store
+        if store is not None:
+            try:
+                store.update_tokens(cfg.session_id, stats.input_tokens, stats.output_tokens)
+            except Exception as e:
+                logger.debug("Could not update session store: %s", e)
+
         out.print_summary(stats)
         return 0
 

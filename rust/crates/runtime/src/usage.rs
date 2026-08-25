@@ -76,8 +76,8 @@ pub fn pricing_for_model(model: &str) -> Option<ModelPricing> {
     }
     if normalized.contains("kimi") {
         return Some(ModelPricing {
-            input_cost_per_million: 0.60,
-            output_cost_per_million: 1.20,
+            input_cost_per_million: 0.45,
+            output_cost_per_million: 2.25,
             cache_creation_cost_per_million: 0.0,
             cache_read_cost_per_million: 0.0,
         });
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn free_tier_models_have_zero_cost() {
         let pricing =
-            pricing_for_model("nvidia/nemotron-3-ultra-550b-a35b:free").expect("free tier pricing");
+            pricing_for_model("nvidia/nemotron-3-ultra-550b-a55b:free").expect("free tier pricing");
         assert_eq!(format_usd(pricing.input_cost_per_million), "$0.0000");
         assert_eq!(format_usd(pricing.output_cost_per_million), "$0.0000");
 
@@ -356,8 +356,10 @@ mod tests {
     fn known_openrouter_paid_models_have_correct_pricing() {
         let deepseek = pricing_for_model("deepseek/deepseek-v3.2").expect("deepseek pricing");
         assert_eq!(format_usd(deepseek.input_cost_per_million), "$0.2600");
+        assert_eq!(format_usd(deepseek.output_cost_per_million), "$0.3800");
 
         let kimi = pricing_for_model("moonshotai/kimi-k2.5").expect("kimi pricing");
-        assert_eq!(format_usd(kimi.input_cost_per_million), "$0.6000");
+        assert_eq!(format_usd(kimi.input_cost_per_million), "$0.4500");
+        assert_eq!(format_usd(kimi.output_cost_per_million), "$2.2500");
     }
 }

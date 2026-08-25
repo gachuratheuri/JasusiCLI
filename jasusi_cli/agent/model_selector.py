@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from jasusi_cli.config.registry import ROLES_BY_NAME
 from jasusi_cli.core.clients import get_fallback_chain, get_model
 
 logger = logging.getLogger(__name__)
@@ -46,10 +47,12 @@ def select_agent_model(
         model_id, provider = get_model(preferred_role)
         return ModelSelection(model_id=model_id, provider=provider, is_fallback=False, fallback_position=0)
     except Exception as e:
-        logger.warning("Could not resolve role %s from settings (%s); falling back to default", preferred_role, e)
+        logger.warning("Could not resolve role %s from settings (%s); falling back to registry", preferred_role, e)
+        # Use canonical registry as fallback — no hardcoded third roster copy (F11/F14)
+        spec = ROLES_BY_NAME.get(preferred_role) or ROLES_BY_NAME["developer"]
         return ModelSelection(
-            model_id="qwen/qwen3-coder-480b-a35b:free",
-            provider="openrouter",
+            model_id=spec.model,
+            provider=spec.provider_key,
             is_fallback=True,
             fallback_position=0,
         )
@@ -61,10 +64,10 @@ def get_agent_fallback_chain() -> list[dict[str, str]]:
         return get_fallback_chain()
     except Exception as e:
         logger.warning("Could not read fallback chain from settings: %s", e)
+        # Derive from registry roles rather than maintaining a third roster copy
         return [
-            {"model": "qwen/qwen3-coder-480b-a35b:free", "provider": "openrouter"},
-            {"model": "poolside/laguna-s-2.1:free", "provider": "openrouter"},
-            {"model": "deepseek/deepseek-r1:free", "provider": "openrouter"},
-            {"model": "cohere/north-mini-code:free", "provider": "openrouter"},
-            {"model": "nvidia/nemotron-3-ultra-550b-a35b:free", "provider": "openrouter"},
+            {"model": spec.model, "provider": spec.provider_key}
+            for spec in ROLES_BY_NAME.values()
+            if spec.provider_key == "openrouter"
         ]
+

@@ -28,11 +28,15 @@ def test_registry_roles_match_settings_routing() -> None:
         assert routing[role_name]["model"] == spec.model, (
             f"Model mismatch for role {role_name}: {routing[role_name]['model']} vs {spec.model}"
         )
+        expected_provider = "googleai" if spec.provider_key == "google_ai" else spec.provider_key
+        assert routing[role_name]["provider"] == expected_provider, (
+            f"Provider mismatch for role {role_name}: {routing[role_name]['provider']} vs {expected_provider}"
+        )
 
 
 def test_executor_model_is_nemotron_ultra() -> None:
-    assert ROLES_BY_NAME["executor"].model == "nvidia/nemotron-3-ultra-550b-a35b:free"
-    assert model_for("executor") == "nvidia/nemotron-3-ultra-550b-a35b:free"
+    assert ROLES_BY_NAME["executor"].model == "nvidia/nemotron-3-ultra-550b-a55b:free"
+    assert model_for("executor") == "nvidia/nemotron-3-ultra-550b-a55b:free"
     assert provider_for("executor") == "openrouter"
 
 
@@ -41,7 +45,7 @@ def test_version_string_consistency() -> None:
     with open(settings_path, encoding="utf-8") as f:
         settings = json.load(f)
 
-    assert settings["system"]["version"] == "3.3.0"
+    assert settings["system"]["version"] == "3.0.0"
     assert _FALLBACK_VERSION == "3.0.0"
     assert VERSION == "3.0.0"
 

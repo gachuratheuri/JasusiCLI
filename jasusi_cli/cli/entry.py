@@ -38,11 +38,11 @@ def build_parser() -> argparse.ArgumentParser:
     fix_p.add_argument("filepath", help="Path to file to fix")
     agent_p = sub.add_parser("agent", help="Run an autonomous coding agent on a task")
     agent_p.add_argument("input", nargs="*", help="Task description")
-    agent_p.add_argument("--model", "-m", help="Override model (e.g. qwen/qwen3-coder-480b-a35b:free)")
+    agent_p.add_argument("--model", "-m", help="Override model (e.g. qwen/qwen3-coder:free)")
     agent_p.add_argument(
         "--auto-approve",
         action="store_true",
-        help="Auto-approve workspace file modifications without prompting",
+        help="Auto-approve workspace file modifications without prompting (still prompts for shell execution)",
     )
     agent_p.add_argument(
         "--max-iterations",

@@ -70,12 +70,12 @@ class TestModelSelector:
 
     def test_select_agent_model_with_executor_role(self) -> None:
         sel = select_agent_model("executor")
-        assert sel.model_id == "nvidia/nemotron-3-ultra-550b-a35b:free"
+        assert sel.model_id == "nvidia/nemotron-3-ultra-550b-a55b:free"
         assert sel.provider == "openrouter"
 
     def test_select_agent_model_with_force_override(self) -> None:
-        sel = select_agent_model(force_model="qwen/qwen3-coder-480b-a35b:free")
-        assert sel.model_id == "qwen/qwen3-coder-480b-a35b:free"
+        sel = select_agent_model(force_model="qwen/qwen3-coder:free")
+        assert sel.model_id == "qwen/qwen3-coder:free"
         assert sel.provider == "openrouter"
 
     def test_get_agent_fallback_chain_returns_non_empty(self) -> None:
@@ -122,7 +122,7 @@ class TestAgentOutput:
 
 class TestAutoApprovePrompter:
     def test_allows_safe_tools_unconditionally(self) -> None:
-        prompter = AutoApprovePrompter(allow_bash=True)
+        prompter = AutoApprovePrompter(allow_bash=False)
         assert prompter.ask("file_read", "path='app.py'") is True
         assert prompter.ask("file_write", "path='app.py'") is True
         assert prompter.ask("file_edit", "path='app.py'") is True
@@ -130,7 +130,12 @@ class TestAutoApprovePrompter:
         assert prompter.ask("grep_search", "query='def'") is True
         assert prompter.ask("todo_write", "tasks=[]") is True
 
-    def test_allows_bash_when_configured(self) -> None:
+    def test_denies_bash_by_default(self) -> None:
+        # Default allow_bash=False fails closed on bash when non-interactive
+        prompter = AutoApprovePrompter(allow_bash=False)
+        assert prompter.ask("bash", "pytest") is False
+
+    def test_allows_bash_when_explicitly_configured(self) -> None:
         prompter = AutoApprovePrompter(allow_bash=True)
         assert prompter.ask("bash", "pytest") is True
 
@@ -138,9 +143,9 @@ class TestAutoApprovePrompter:
 class TestCliAgentParser:
     def test_agent_subcommand_parsed_correctly(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["agent", "Fix", "the", "bug", "--model", "qwen/qwen3-coder-480b-a35b:free", "--auto-approve"])
+        args = parser.parse_args(["agent", "Fix", "the", "bug", "--model", "qwen/qwen3-coder:free", "--auto-approve"])
         assert args.command == "agent"
         assert args.input == ["Fix", "the", "bug"]
-        assert args.model == "qwen/qwen3-coder-480b-a35b:free"
+        assert args.model == "qwen/qwen3-coder:free"
         assert args.auto_approve is True
         assert args.max_iterations == 16

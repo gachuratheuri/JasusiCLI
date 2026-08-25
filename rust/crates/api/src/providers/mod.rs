@@ -179,9 +179,6 @@ pub fn detect_provider_kind(model: &str) -> ProviderKind {
     if let Some(metadata) = metadata_for_model(model) {
         return metadata.provider;
     }
-    if model.contains('/') {
-        return ProviderKind::OpenRouter;
-    }
     if anthropic::has_auth_from_env_or_saved().unwrap_or(false) {
         return ProviderKind::Anthropic;
     }
@@ -232,15 +229,15 @@ mod tests {
     #[test]
     fn detects_openrouter_from_slash_model_id() {
         assert_eq!(
-            detect_provider_kind("nvidia/nemotron-3-ultra-550b-a35b:free"),
+            detect_provider_kind("nvidia/nemotron-3-ultra-550b-a55b:free"),
             ProviderKind::OpenRouter,
         );
         assert_eq!(
-            detect_provider_kind("qwen/qwen3-coder-480b-a35b:free"),
+            detect_provider_kind("qwen/qwen3-coder:free"),
             ProviderKind::OpenRouter,
         );
         assert_eq!(
-            detect_provider_kind("deepseek/deepseek-r1:free"),
+            detect_provider_kind("stealth/ox-alpha:free"),
             ProviderKind::OpenRouter,
         );
     }
@@ -250,7 +247,7 @@ mod tests {
         assert_eq!(max_tokens_for_model("opus"), 32_000);
         assert_eq!(max_tokens_for_model("grok-3"), 64_000);
         assert_eq!(
-            max_tokens_for_model("nvidia/nemotron-3-ultra-550b-a35b:free"),
+            max_tokens_for_model("nvidia/nemotron-3-ultra-550b-a55b:free"),
             16_384
         );
     }
